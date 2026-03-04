@@ -1,0 +1,58 @@
+shows:
+  - slug: up-first
+    name: "Up First"
+    publisher: NPR
+    rss_url: "https://feeds.npr.org/510318/podcast.xml"
+    format: survey
+    typical_length_min: 12
+    web_transcript:
+      enabled: true
+      base_url: "https://www.npr.org/transcripts"
+      parser: npr
+
+  - slug: the-daily
+    name: "The Daily"
+    publisher: NYT
+    rss_url: null  # TODO: extract from Apple Podcasts or podcast index
+    format: deep-dive
+    typical_length_min: 28
+    web_transcript:
+      enabled: false
+
+  - slug: today-explained
+    name: "Today, Explained"
+    publisher: Vox
+    rss_url: "https://feeds.megaphone.fm/VMP5705694065"
+    format: analytical
+    typical_length_min: 27
+    web_transcript:
+      enabled: false
+
+  - slug: consider-this
+    name: "Consider This"
+    publisher: NPR
+    rss_url: "https://feeds.npr.org/510355/podcast.xml"
+    format: mid-depth
+    typical_length_min: 17
+    web_transcript:
+      enabled: true
+      base_url: "https://www.npr.org/transcripts"
+      parser: npr
+
+transcription:
+  engine: moonshine       # moonshine | faster-whisper | whisper-api
+  model: medium           # tiny | base | small | medium
+  cleanup_audio: true     # Delete MP3s after transcription
+
+analysis:
+  provider: anthropic
+  model: claude-sonnet-4-5-20250929
+  prompt_file: config/prompt.md
+  max_tokens: 4096
+
+delivery:
+  method: file            # file | email
+  output_dir: data/briefings
+
+schedule:
+  cron: "0 7 * * 1-6"    # 7am PT, Mon-Sat
