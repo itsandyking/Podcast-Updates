@@ -41,8 +41,8 @@ class TranscriptionConfig:
 
 @dataclass
 class AnalysisConfig:
-    provider: str = "anthropic"
-    model: str = "claude-sonnet-4-5-20250929"
+    provider: str = "gemini"
+    model: str = "gemini-2.0-flash"
     prompt_file: str = "config/prompt.md"
     max_tokens: int = 4096
 
@@ -59,7 +59,7 @@ class PipelineConfig:
     transcription: TranscriptionConfig
     analysis: AnalysisConfig
     delivery: DeliveryConfig
-    anthropic_api_key: str = ""
+    gemini_api_key: str = ""
 
 
 def load_config(config_path: Path | None = None) -> PipelineConfig:
@@ -101,5 +101,5 @@ def load_config(config_path: Path | None = None) -> PipelineConfig:
         transcription=transcription,
         analysis=analysis,
         delivery=delivery,
-        anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
+        gemini_api_key=os.environ.get("GEMINI_API_KEY", ""),
     )

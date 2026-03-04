@@ -20,7 +20,7 @@ Automated daily pipeline that ingests transcripts from multiple daily news podca
 ## Pipeline
 
 ```
-Cron (7am PT) → Fetch RSS → Download Audio → Transcribe (Moonshine) → Analyze (Claude) → Deliver
+Cron (7am PT) → Fetch RSS → Download Audio → Transcribe (Moonshine) → Analyze (Gemini) → Deliver
 ```
 
 NPR shows check for web-published transcripts first to save compute.
@@ -38,7 +38,7 @@ pip install -e ".[whisper]"     # Alternative
 
 # Configure
 cp config/.env.example config/.env
-# Edit config/.env with your ANTHROPIC_API_KEY
+# Edit config/.env with your GEMINI_API_KEY (free at https://aistudio.google.com/apikey)
 ```
 
 ## Usage
@@ -53,11 +53,11 @@ podcast-updates 2026-03-03
 
 ## Configuration
 
-Edit `config/shows.yaml` to add/remove shows, change transcription engine, or adjust delivery method. The Claude analysis prompt is in `config/prompt.md`.
+Edit `config/shows.yaml` to add/remove shows, change transcription engine, or adjust delivery method. The analysis prompt is in `config/prompt.md`.
 
 ## Architecture
 
 - **Platform:** Raspberry Pi 5 (16GB, 512GB NVMe)
 - **Transcription:** Moonshine Medium (primary) or faster-whisper (fallback)
-- **Analysis:** Claude Sonnet 4.5 via Anthropic API
-- **Cost:** ~$2-3/month (API only)
+- **Analysis:** Google Gemini 2.0 Flash (free tier)
+- **Cost:** $0/month

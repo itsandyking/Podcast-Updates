@@ -50,8 +50,8 @@ async def run_pipeline(target_date: date | None = None) -> Path | None:
     logger.info("=== Podcast Updates pipeline starting for %s ===", date_str)
 
     config = load_config()
-    if not config.anthropic_api_key:
-        logger.error("ANTHROPIC_API_KEY not set — cannot run analysis")
+    if not config.gemini_api_key:
+        logger.error("GEMINI_API_KEY not set — cannot run analysis")
         return None
 
     # Step 1: Fetch RSS feeds
@@ -102,7 +102,7 @@ async def run_pipeline(target_date: date | None = None) -> Path | None:
         logger.error("No transcripts available — aborting")
         return None
 
-    # Step 5: Analyze with Claude
+    # Step 5: Analyze with Gemini
     logger.info("Step 5: Running cross-show analysis")
     briefing = analyze_transcripts(config, transcripts, target_date)
     if not briefing:

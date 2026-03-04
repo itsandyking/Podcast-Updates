@@ -45,8 +45,8 @@ transcription:
   cleanup_audio: true     # Delete MP3s after transcription
 
 analysis:
-  provider: anthropic
-  model: claude-sonnet-4-5-20250929
+  provider: gemini
+  model: gemini-2.0-flash
   prompt_file: config/prompt.md
   max_tokens: 4096
 

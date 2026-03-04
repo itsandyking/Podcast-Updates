@@ -1,15 +1,14 @@
-"""Send transcripts to Claude API for cross-show analysis."""
+"""Send transcripts to Google Gemini for cross-show analysis."""
 
 from __future__ import annotations
 
 import logging
 from datetime import date
-from pathlib import Path
 
-import anthropic
+import google.generativeai as genai
 import jinja2
 
-from .config import AnalysisConfig, PipelineConfig, ROOT_DIR
+from .config import PipelineConfig, ROOT_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +17,7 @@ def build_prompt(
     config: PipelineConfig,
     transcripts: dict[str, str],
     target_date: date,
-) -> str:
+) -> tuple[str, str]:
     """Assemble the analysis prompt from the template and transcripts."""
     prompt_path = ROOT_DIR / config.analysis.prompt_file
     template_text = prompt_path.read_text()
@@ -61,7 +60,7 @@ def analyze_transcripts(
     transcripts: dict[str, str],
     target_date: date,
 ) -> str | None:
-    """Send transcripts to Claude for cross-show analysis.
+    """Send transcripts to Gemini for cross-show analysis.
 
     Returns the briefing text, or None on failure.
     """
@@ -77,29 +76,29 @@ def analyze_transcripts(
     system_prompt, user_message = build_prompt(config, transcripts, target_date)
 
     logger.info(
-        "Sending %d transcripts to Claude (%s) for analysis",
+        "Sending %d transcripts to Gemini (%s) for analysis",
         len(transcripts),
         config.analysis.model,
     )
 
-    client = anthropic.Anthropic(api_key=config.anthropic_api_key)
+    genai.configure(api_key=config.gemini_api_key)
+    model = genai.GenerativeModel(
+        model_name=config.analysis.model,
+        system_instruction=system_prompt,
+    )
 
     try:
-        message = client.messages.create(
-            model=config.analysis.model,
-            max_tokens=config.analysis.max_tokens,
-            system=system_prompt,
-            messages=[{"role": "user", "content": user_message}],
+        response = model.generate_content(
+            user_message,
+            generation_config=genai.types.GenerationConfig(
+                max_output_tokens=config.analysis.max_tokens,
+            ),
         )
-        briefing = message.content[0].text
-        logger.info(
-            "Analysis complete — %d tokens in, %d tokens out",
-            message.usage.input_tokens,
-            message.usage.output_tokens,
-        )
+        briefing = response.text
+        logger.info("Analysis complete")
         return briefing
-    except anthropic.APIError as e:
-        logger.error("Claude API error: %s", e)
+    except Exception as e:
+        logger.error("Gemini API error: %s", e)
         return None
 
 
@@ -113,20 +112,24 @@ def _single_show_summary(
     show = next((s for s in config.shows if s.slug == slug), None)
     name = show.name if show else slug
 
-    client = anthropic.Anthropic(api_key=config.anthropic_api_key)
+    genai.configure(api_key=config.gemini_api_key)
+    model = genai.GenerativeModel(
+        model_name=config.analysis.model,
+        system_instruction=(
+            f"You are a news analyst. Summarize this podcast episode from {name} "
+            f"aired on {target_date.isoformat()}. Identify each story covered, "
+            "the editorial angle, and key facts."
+        ),
+    )
 
     try:
-        message = client.messages.create(
-            model=config.analysis.model,
-            max_tokens=config.analysis.max_tokens,
-            system=(
-                f"You are a news analyst. Summarize this podcast episode from {name} "
-                f"aired on {target_date.isoformat()}. Identify each story covered, "
-                "the editorial angle, and key facts."
+        response = model.generate_content(
+            text,
+            generation_config=genai.types.GenerationConfig(
+                max_output_tokens=config.analysis.max_tokens,
             ),
-            messages=[{"role": "user", "content": text}],
         )
-        return message.content[0].text
-    except anthropic.APIError as e:
-        logger.error("Claude API error (single-show): %s", e)
+        return response.text
+    except Exception as e:
+        logger.error("Gemini API error (single-show): %s", e)
         return None
