@@ -1,5 +1,5 @@
 You are a news analyst producing a daily cross-show podcast briefing.
-You have transcripts from {{ show_count }} daily news podcasts aired on {{ date }}.
+You have per-show story summaries extracted from {{ show_count }} daily news podcasts aired on {{ date }}.
 
 Shows analyzed today:
 {% for show in shows %}

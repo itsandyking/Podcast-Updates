@@ -13,8 +13,7 @@ from .download_audio import cleanup_audio, download_episode
 from .fetch_rss import fetch_all_episodes
 from .fetch_transcripts import try_web_transcript
 from .transcribe import transcribe_audio
-from .analyze import analyze_transcripts
-from .deliver import deliver
+from .deliver import save_daily_transcripts, deliver_transcripts_email
 
 logger = logging.getLogger(__name__)
 
@@ -49,14 +48,18 @@ async def run_pipeline(target_date: date | None = None) -> Path | None:
 
     logger.info("=== Podcast Updates pipeline starting for %s ===", date_str)
 
+    # Already-ran guard
+    from .config import ROOT_DIR
+    combined_path = ROOT_DIR / "daily_transcripts" / date_str / "all-transcripts.md"
+    if combined_path.exists():
+        logger.info("Transcripts for %s already exist at %s — skipping", date_str, combined_path)
+        return combined_path
+
     config = load_config()
-    if not config.gemini_api_key:
-        logger.error("GEMINI_API_KEY not set — cannot run analysis")
-        return None
 
     # Step 1: Fetch RSS feeds
     logger.info("Step 1: Fetching RSS feeds")
-    episodes = fetch_all_episodes(config.shows)
+    episodes = fetch_all_episodes(config.shows, target_date)
     if not episodes:
         logger.error("No episodes found from any show — aborting")
         return None
@@ -102,24 +105,22 @@ async def run_pipeline(target_date: date | None = None) -> Path | None:
         logger.error("No transcripts available — aborting")
         return None
 
-    # Step 5: Analyze with Gemini
-    logger.info("Step 5: Running cross-show analysis")
-    briefing = analyze_transcripts(config, transcripts, target_date)
-    if not briefing:
-        logger.error("Analysis failed — aborting")
-        return None
+    # Step 5: Package transcripts
+    logger.info("Step 5: Saving transcripts for Claude analysis")
+    combined_path = save_daily_transcripts(config, transcripts, target_date)
 
-    # Step 6: Deliver
-    logger.info("Step 6: Delivering briefing")
-    path = deliver(config, briefing, target_date, transcript_sources)
+    # Step 6: Email transcripts
+    if config.delivery.method == "email":
+        logger.info("Step 6: Emailing transcripts")
+        deliver_transcripts_email(combined_path, target_date)
 
     # Step 7: Cleanup
     if config.transcription.cleanup_audio:
         logger.info("Step 7: Cleaning up audio files")
         cleanup_audio(date_str)
 
-    logger.info("=== Pipeline complete — briefing at %s ===", path)
-    return path
+    logger.info("=== Pipeline complete — transcripts at %s ===", combined_path)
+    return combined_path
 
 
 def main() -> None:

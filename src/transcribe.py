@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+import array
 import logging
+import struct
+import subprocess
+import tempfile
+import wave
 from pathlib import Path
 
 from .config import DATA_DIR, TranscriptionConfig
@@ -33,7 +38,7 @@ def transcribe_audio(
     logger.info("Transcribing %s with %s (%s)", audio_path.name, config.engine, config.model)
 
     if config.engine == "moonshine":
-        text = _transcribe_moonshine(audio_path, config.model)
+        text = _transcribe_moonshine(audio_path)
     elif config.engine == "faster-whisper":
         text = _transcribe_faster_whisper(audio_path, config.model)
     else:
@@ -48,24 +53,76 @@ def transcribe_audio(
     return text
 
 
-def _transcribe_moonshine(audio_path: Path, model_name: str) -> str | None:
-    """Transcribe using Moonshine."""
+def _mp3_to_wav(mp3_path: Path) -> Path | None:
+    """Convert MP3 to 16kHz mono WAV using ffmpeg."""
+    wav_path = Path(tempfile.mktemp(suffix=".wav"))
     try:
-        from moonshine import transcribe as moon_transcribe
+        subprocess.run(
+            [
+                "ffmpeg", "-y", "-i", str(mp3_path),
+                "-ar", "16000", "-ac", "1", "-f", "wav",
+                str(wav_path),
+            ],
+            capture_output=True,
+            check=True,
+        )
+        return wav_path
+    except subprocess.CalledProcessError as e:
+        logger.error("ffmpeg conversion failed: %s", e.stderr.decode())
+        return None
+
+
+def _transcribe_moonshine(audio_path: Path) -> str | None:
+    """Transcribe using Moonshine voice."""
+    try:
+        from moonshine_voice.download import download_model_from_info, find_model_info
+        from moonshine_voice.transcriber import Transcriber
+        from moonshine_voice.moonshine_api import ModelArch
     except ImportError:
         logger.error(
             "moonshine-voice not installed. Install with: pip install moonshine-voice"
         )
         return None
 
+    # Convert MP3 to WAV
+    logger.info("Converting MP3 to WAV for Moonshine...")
+    wav_path = _mp3_to_wav(audio_path)
+    if not wav_path:
+        return None
+
     try:
-        result = moon_transcribe(str(audio_path), model=model_name)
-        if isinstance(result, list):
-            return "\n".join(result)
-        return str(result)
+        # Load WAV as PCM float samples using wave module
+        with wave.open(str(wav_path), "rb") as wf:
+            n_frames = wf.getnframes()
+            raw_bytes = wf.readframes(n_frames)
+            # Convert 16-bit PCM to float [-1.0, 1.0]
+            samples = struct.unpack(f"<{n_frames}h", raw_bytes)
+            audio_data = [s / 32768.0 for s in samples]
+
+        logger.info("Audio loaded: %d samples (%.1f seconds)", len(audio_data), len(audio_data) / 16000)
+
+        # Download model if needed and get the correct path
+        info = find_model_info("en", ModelArch.BASE)
+        model_path, model_arch = download_model_from_info(info)
+        transcriber = Transcriber(model_path, model_arch=model_arch)
+
+        # Transcribe
+        transcript = transcriber.transcribe_without_streaming(audio_data, sample_rate=16000)
+
+        # Extract text from transcript lines
+        lines = []
+        for line in transcript.lines:
+            lines.append(line.text.strip())
+
+        transcriber.close()
+
+        text = "\n\n".join(line for line in lines if line)
+        return text if text else None
     except Exception as e:
         logger.error("Moonshine transcription failed: %s", e)
         return None
+    finally:
+        wav_path.unlink(missing_ok=True)
 
 
 def _transcribe_faster_whisper(audio_path: Path, model_name: str) -> str | None:

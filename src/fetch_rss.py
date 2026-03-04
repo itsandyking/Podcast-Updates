@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import feedparser
 
@@ -22,12 +22,14 @@ class Episode:
     audio_url: str
     duration_seconds: int | None = None
     description: str = ""
+    link: str = ""
 
 
-def fetch_latest_episode(show: Show) -> Episode | None:
+def fetch_latest_episode(show: Show, target_date: date) -> Episode | None:
     """Fetch the most recent episode from a show's RSS feed.
 
-    Returns None if the feed can't be parsed or has no episodes.
+    Returns None if the feed can't be parsed, has no episodes, or the latest
+    episode is older than one day before target_date.
     """
     if not show.rss_url:
         logger.warning("No RSS URL configured for %s — skipping", show.name)
@@ -75,7 +77,7 @@ def fetch_latest_episode(show: Show) -> Episode | None:
     if raw_duration:
         duration = _parse_duration(raw_duration)
 
-    return Episode(
+    episode = Episode(
         show_slug=show.slug,
         show_name=show.name,
         title=entry.get("title", "Unknown"),
@@ -83,7 +85,28 @@ def fetch_latest_episode(show: Show) -> Episode | None:
         audio_url=audio_url,
         duration_seconds=duration,
         description=entry.get("summary", ""),
+        link=entry.get("link", ""),
     )
+
+    # Date filtering: skip episodes published more than 24 hours ago
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    if episode.published < cutoff:
+        logger.warning(
+            "Skipping %s — latest episode (%s) is older than %s",
+            show.name,
+            episode.published.date().isoformat(),
+            cutoff.date().isoformat(),
+        )
+        return None
+
+    if episode.published.date() < target_date:
+        logger.warning(
+            "%s: using episode from %s (today's episode not yet published?)",
+            show.name,
+            episode.published.date().isoformat(),
+        )
+
+    return episode
 
 
 def _parse_duration(raw: str) -> int | None:
@@ -101,11 +124,11 @@ def _parse_duration(raw: str) -> int | None:
     return None
 
 
-def fetch_all_episodes(shows: list[Show]) -> list[Episode]:
+def fetch_all_episodes(shows: list[Show], target_date: date) -> list[Episode]:
     """Fetch the latest episode from each configured show."""
     episodes = []
     for show in shows:
-        ep = fetch_latest_episode(show)
+        ep = fetch_latest_episode(show, target_date)
         if ep:
             episodes.append(ep)
         else:

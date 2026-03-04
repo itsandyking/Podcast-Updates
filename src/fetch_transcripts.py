@@ -22,11 +22,11 @@ async def fetch_npr_transcript(episode: Episode, show: Show) -> str | None:
     if not show.web_transcript.enabled or show.web_transcript.parser != "npr":
         return None
 
-    # Try to extract the NPR episode ID from the audio URL
-    # NPR audio URLs often contain a numeric ID
-    match = re.search(r"/(\d{9,})/", episode.audio_url)
+    # Extract the NPR episode ID from the article link
+    # Link format: https://www.npr.org/YYYY/MM/DD/{episode_id}/slug
+    match = re.search(r"npr\.org/\d{4}/\d{2}/\d{2}/([^/]+)/", episode.link)
     if not match:
-        logger.debug("Could not extract NPR episode ID from audio URL for %s", episode.title)
+        logger.debug("Could not extract NPR episode ID from link for %s", episode.title)
         return None
 
     episode_id = match.group(1)

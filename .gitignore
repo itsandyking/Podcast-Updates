@@ -20,6 +20,7 @@ env/
 data/transcripts/
 data/briefings/
 data/logs/
+daily_transcripts/
 *.mp3
 *.wav
 

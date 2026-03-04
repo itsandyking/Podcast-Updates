@@ -13,7 +13,7 @@ shows:
   - slug: the-daily
     name: "The Daily"
     publisher: NYT
-    rss_url: null  # TODO: extract from Apple Podcasts or podcast index
+    rss_url: "http://feeds.simplecast.com/Sl5CSM3S"
     format: deep-dive
     typical_length_min: 28
     web_transcript:
@@ -39,19 +39,55 @@ shows:
       base_url: "https://www.npr.org/transcripts"
       parser: npr
 
+  - slug: the-headlines-nyt
+    name: "The Headlines"
+    publisher: NYT
+    rss_url: "https://feeds.simplecast.com/ydACIPHO"
+    format: survey
+    typical_length_min: 9
+    web_transcript:
+      enabled: false
+
+  - slug: la-times-headlines
+    name: "Headlines From The Times"
+    publisher: "L.A. Times"
+    rss_url: "https://feeds.simplecast.com/_lj7xUNU"
+    format: survey
+    typical_length_min: 9
+    web_transcript:
+      enabled: false
+
+  - slug: apple-news-today
+    name: "Apple News Today"
+    publisher: Apple News
+    rss_url: "https://apple.news/podcast/apple_news_today"
+    format: survey
+    typical_length_min: 14
+    web_transcript:
+      enabled: false
+
+  - slug: wsj-take-on-the-week
+    name: "WSJ's Take on the Week"
+    publisher: WSJ
+    rss_url: "https://video-api.wsj.com/podcast/rss/wsj/take-on-the-week"
+    format: deep-dive
+    typical_length_min: 31
+    web_transcript:
+      enabled: false
+
 transcription:
-  engine: moonshine       # moonshine | faster-whisper | whisper-api
-  model: medium           # tiny | base | small | medium
+  engine: faster-whisper  # moonshine | faster-whisper | whisper-api
+  model: tiny             # tiny | base | small | medium
   cleanup_audio: true     # Delete MP3s after transcription
 
 analysis:
   provider: gemini
-  model: gemini-2.0-flash
+  model: gemini-2.5-flash-lite
   prompt_file: config/prompt.md
   max_tokens: 4096
 
 delivery:
-  method: file            # file | email
+  method: email           # file | email
   output_dir: data/briefings
 
 schedule:
