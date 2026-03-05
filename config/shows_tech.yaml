@@ -1,0 +1,51 @@
+group: tech
+
+shows:
+  - slug: hard-fork
+    name: "Hard Fork"
+    publisher: NYT
+    rss_url: "https://feeds.simplecast.com/l2i9YnTd"
+    format: deep-dive
+    typical_length_min: 60
+    cadence: weekly
+    web_transcript:
+      enabled: false
+
+  - slug: 404-media
+    name: "404 Media"
+    publisher: 404 Media
+    rss_url: "https://feeds.megaphone.fm/TBIEA2761282490"
+    format: analytical
+    typical_length_min: 45
+    cadence: weekly
+    web_transcript:
+      enabled: false
+
+  - slug: decoder
+    name: "Decoder"
+    publisher: The Verge
+    rss_url: "https://feeds.megaphone.fm/recodedecode"
+    format: deep-dive
+    typical_length_min: 60
+    cadence: weekly
+    web_transcript:
+      enabled: false
+
+transcription:
+  engine: faster-whisper
+  model: tiny
+  cleanup_audio: true
+
+analysis:
+  provider: gemini
+  model: gemini-2.5-flash-lite
+  prompt_file: config/prompt_tech.md
+  max_tokens: 4096
+
+delivery:
+  method: email
+  output_dir: data/briefings
+  claude_prompt_file: config/prompt_claude_tech.md
+
+schedule:
+  cron: "0 14 * * 5"  # Fri 2pm UTC / 6am PT — after Hard Fork drops at noon UTC

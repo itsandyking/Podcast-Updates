@@ -30,6 +30,7 @@ class Show:
     format: str
     typical_length_min: int
     web_transcript: WebTranscript = field(default_factory=WebTranscript)
+    cadence: str = "daily"
 
 
 @dataclass
@@ -51,6 +52,7 @@ class AnalysisConfig:
 class DeliveryConfig:
     method: str = "file"
     output_dir: str = "data/briefings"
+    claude_prompt_file: str = "config/prompt_claude.md"
 
 
 @dataclass
@@ -60,6 +62,7 @@ class PipelineConfig:
     analysis: AnalysisConfig
     delivery: DeliveryConfig
     gemini_api_key: str = ""
+    group: str = ""
 
 
 def load_config(config_path: Path | None = None) -> PipelineConfig:
@@ -89,6 +92,7 @@ def load_config(config_path: Path | None = None) -> PipelineConfig:
                 format=s["format"],
                 typical_length_min=s["typical_length_min"],
                 web_transcript=wt,
+                cadence=s.get("cadence", "daily"),
             )
         )
 
@@ -102,4 +106,5 @@ def load_config(config_path: Path | None = None) -> PipelineConfig:
         analysis=analysis,
         delivery=delivery,
         gemini_api_key=os.environ.get("GEMINI_API_KEY", ""),
+        group=raw.get("group", ""),
     )

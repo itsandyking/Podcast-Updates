@@ -101,10 +101,14 @@ def save_daily_transcripts(
     target_date: date,
 ) -> Path:
     """Save transcripts as individual MD files and a combined file with prompt."""
-    dest_dir = DAILY_TRANSCRIPTS_DIR / target_date.isoformat()
+    date_str = target_date.isoformat()
+    if config.group:
+        dest_dir = DAILY_TRANSCRIPTS_DIR / date_str / config.group
+    else:
+        dest_dir = DAILY_TRANSCRIPTS_DIR / date_str
     dest_dir.mkdir(parents=True, exist_ok=True)
 
-    prompt_text = (ROOT_DIR / "config" / "prompt_claude.md").read_text()
+    prompt_text = (ROOT_DIR / config.delivery.claude_prompt_file).read_text()
 
     # Save individual transcript files
     for show in config.shows:

@@ -36,7 +36,10 @@ def fetch_latest_episode(show: Show, target_date: date) -> Episode | None:
         return None
 
     logger.info("Fetching RSS feed for %s", show.name)
-    feed = feedparser.parse(show.rss_url)
+    feed = feedparser.parse(
+        show.rss_url,
+        agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    )
 
     if feed.bozo and not feed.entries:
         logger.error("Failed to parse feed for %s: %s", show.name, feed.bozo_exception)
@@ -88,8 +91,11 @@ def fetch_latest_episode(show: Show, target_date: date) -> Episode | None:
         link=entry.get("link", ""),
     )
 
-    # Date filtering: skip episodes published more than 24 hours ago
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    # Date filtering: skip episodes older than the cadence window
+    if show.cadence == "weekly":
+        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+    else:
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
     if episode.published < cutoff:
         logger.warning(
             "Skipping %s — latest episode (%s) is older than %s",

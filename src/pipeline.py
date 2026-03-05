@@ -35,7 +35,7 @@ def setup_logging(target_date: date) -> None:
     )
 
 
-async def run_pipeline(target_date: date | None = None) -> Path | None:
+async def run_pipeline(target_date: date | None = None, config_path: Path | None = None) -> Path | None:
     """Execute the full daily pipeline.
 
     Returns the path to the saved briefing, or None on failure.
@@ -48,14 +48,17 @@ async def run_pipeline(target_date: date | None = None) -> Path | None:
 
     logger.info("=== Podcast Updates pipeline starting for %s ===", date_str)
 
-    # Already-ran guard
+    config = load_config(config_path)
+
+    # Already-ran guard — use group subdirectory when group is set
     from .config import ROOT_DIR
-    combined_path = ROOT_DIR / "daily_transcripts" / date_str / "all-transcripts.md"
+    if config.group:
+        combined_path = ROOT_DIR / "daily_transcripts" / date_str / config.group / "all-transcripts.md"
+    else:
+        combined_path = ROOT_DIR / "daily_transcripts" / date_str / "all-transcripts.md"
     if combined_path.exists():
         logger.info("Transcripts for %s already exist at %s — skipping", date_str, combined_path)
         return combined_path
-
-    config = load_config()
 
     # Step 1: Fetch RSS feeds
     logger.info("Step 1: Fetching RSS feeds")
@@ -125,10 +128,20 @@ async def run_pipeline(target_date: date | None = None) -> Path | None:
 
 def main() -> None:
     """CLI entry point."""
+    args = sys.argv[1:]
     target = None
-    if len(sys.argv) > 1:
-        target = date.fromisoformat(sys.argv[1])
-    result = asyncio.run(run_pipeline(target))
+    config_path = None
+
+    i = 0
+    while i < len(args):
+        if args[i] == "--config" and i + 1 < len(args):
+            config_path = Path(args[i + 1])
+            i += 2
+        else:
+            target = date.fromisoformat(args[i])
+            i += 1
+
+    result = asyncio.run(run_pipeline(target, config_path))
     sys.exit(0 if result else 1)
 
 
