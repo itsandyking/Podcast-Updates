@@ -37,8 +37,9 @@ transcription:
   cleanup_audio: true
 
 analysis:
-  provider: gemini
-  model: gemini-2.5-flash-lite
+  provider: anthropic
+  model: claude-sonnet-4-6
+  synthesis_model: claude-opus-4-6
   prompt_file: config/prompt_tech.md
   max_tokens: 4096
 

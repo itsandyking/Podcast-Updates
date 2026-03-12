@@ -34,6 +34,7 @@ shows:
     rss_url: "https://feeds.npr.org/510355/podcast.xml"
     format: mid-depth
     typical_length_min: 17
+    afternoon_release: true
     web_transcript:
       enabled: true
       base_url: "https://www.npr.org/transcripts"
@@ -54,6 +55,7 @@ shows:
     rss_url: "https://feeds.simplecast.com/_lj7xUNU"
     format: survey
     typical_length_min: 9
+    afternoon_release: true
     web_transcript:
       enabled: false
 
@@ -63,6 +65,16 @@ shows:
     rss_url: "https://apple.news/podcast/apple_news_today"
     format: survey
     typical_length_min: 14
+    web_transcript:
+      enabled: false
+
+  - slug: marketplace
+    name: "Marketplace"
+    publisher: "APM"
+    rss_url: "https://www.marketplace.org/feed/podcast/marketplace"
+    format: analytical
+    typical_length_min: 25
+    afternoon_release: true
     web_transcript:
       enabled: false
 
@@ -81,8 +93,9 @@ transcription:
   cleanup_audio: true     # Delete MP3s after transcription
 
 analysis:
-  provider: gemini
-  model: gemini-2.5-flash-lite
+  provider: anthropic
+  model: claude-sonnet-4-6
+  synthesis_model: claude-opus-4-6
   prompt_file: config/prompt.md
   max_tokens: 4096
 

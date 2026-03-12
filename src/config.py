@@ -31,6 +31,7 @@ class Show:
     typical_length_min: int
     web_transcript: WebTranscript = field(default_factory=WebTranscript)
     cadence: str = "daily"
+    afternoon_release: bool = False
 
 
 @dataclass
@@ -42,8 +43,9 @@ class TranscriptionConfig:
 
 @dataclass
 class AnalysisConfig:
-    provider: str = "gemini"
-    model: str = "gemini-2.0-flash"
+    provider: str = "anthropic"
+    model: str = "claude-sonnet-4-6"
+    synthesis_model: str = ""  # If set, overrides model for Pass 2 synthesis only
     prompt_file: str = "config/prompt.md"
     max_tokens: int = 4096
 
@@ -61,7 +63,7 @@ class PipelineConfig:
     transcription: TranscriptionConfig
     analysis: AnalysisConfig
     delivery: DeliveryConfig
-    gemini_api_key: str = ""
+    anthropic_api_key: str = ""
     group: str = ""
 
 
@@ -93,6 +95,7 @@ def load_config(config_path: Path | None = None) -> PipelineConfig:
                 typical_length_min=s["typical_length_min"],
                 web_transcript=wt,
                 cadence=s.get("cadence", "daily"),
+                afternoon_release=s.get("afternoon_release", False),
             )
         )
 
@@ -105,6 +108,6 @@ def load_config(config_path: Path | None = None) -> PipelineConfig:
         transcription=transcription,
         analysis=analysis,
         delivery=delivery,
-        gemini_api_key=os.environ.get("GEMINI_API_KEY", ""),
+        anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
         group=raw.get("group", ""),
     )
