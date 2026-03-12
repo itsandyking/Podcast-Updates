@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import shutil
 import sys
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -13,7 +14,9 @@ from .download_audio import cleanup_audio, download_episode
 from .fetch_rss import fetch_all_episodes
 from .fetch_transcripts import try_web_transcript
 from .transcribe import transcribe_audio
-from .deliver import save_daily_transcripts, deliver_transcripts_email
+from .analyze import analyze_transcripts
+from .deliver import save_daily_transcripts, deliver_transcripts_email, deliver_email
+from .episode_ledger import load_ledger, is_processed, mark_processed
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +71,19 @@ async def run_pipeline(target_date: date | None = None, config_path: Path | None
         return None
     logger.info("Found %d episodes", len(episodes))
 
+    # Filter out already-processed episodes
+    ep_ledger = load_ledger(config.group)
+    fresh = [ep for ep in episodes if not is_processed(ep.guid, ep_ledger)]
+    skipped = len(episodes) - len(fresh)
+    if skipped:
+        for ep in episodes:
+            if is_processed(ep.guid, ep_ledger):
+                logger.info("Skipping %s — episode already processed: %s", ep.show_name, ep.title)
+    if not fresh:
+        logger.info("All episodes already processed — nothing to do")
+        return combined_path if combined_path.exists() else None
+    episodes = fresh
+
     # Step 2 & 3: Get transcripts (web or audio+STT)
     transcripts: dict[str, str] = {}
     transcript_sources: dict[str, str] = {}
@@ -109,13 +125,25 @@ async def run_pipeline(target_date: date | None = None, config_path: Path | None
         return None
 
     # Step 5: Package transcripts
-    logger.info("Step 5: Saving transcripts for Claude analysis")
+    logger.info("Step 5: Saving transcripts")
     combined_path = save_daily_transcripts(config, transcripts, target_date)
 
-    # Step 6: Email transcripts
-    if config.delivery.method == "email":
-        logger.info("Step 6: Emailing transcripts")
-        deliver_transcripts_email(combined_path, target_date)
+    # Step 6: Analyze and deliver
+    if shutil.which("claude"):
+        logger.info("Step 6: Running claude --print analysis")
+        briefing = await analyze_transcripts(config, transcripts, target_date)
+        if briefing and config.delivery.method == "email":
+            logger.info("Step 6b: Emailing briefing")
+            if deliver_email(briefing, target_date, episodes):
+                mark_processed(episodes, config.group, target_date)
+        elif not briefing:
+            logger.warning("Analysis failed — falling back to transcript email")
+            if config.delivery.method == "email":
+                deliver_transcripts_email(combined_path, target_date)
+    else:
+        logger.info("Step 6: claude CLI not found — emailing transcripts for manual analysis")
+        if config.delivery.method == "email":
+            deliver_transcripts_email(combined_path, target_date)
 
     # Step 7: Cleanup
     if config.transcription.cleanup_audio:

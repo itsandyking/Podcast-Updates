@@ -48,6 +48,8 @@ class AnalysisConfig:
     synthesis_model: str = ""  # If set, overrides model for Pass 2 synthesis only
     prompt_file: str = "config/prompt.md"
     max_tokens: int = 4096
+    history_days: int = 7    # How many past briefings to inject as context
+    stale_days: int = 14     # Theme ledger retention window
 
 
 @dataclass

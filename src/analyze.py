@@ -7,7 +7,6 @@ import logging
 import re
 from datetime import date, timedelta
 
-import anthropic
 import jinja2
 import yaml
 
@@ -16,18 +15,17 @@ from .theme_ledger import load_ledger, save_ledger, prune_stale, format_ledger_f
 
 logger = logging.getLogger(__name__)
 
-_RETRY_ATTEMPTS = 3
-_HISTORY_DAYS = 7
+_RATE_LIMIT_PHRASES = ("rate limit", "429", "too many requests", "quota exceeded")
 
 
-def _load_recent_briefings(target_date: date, group: str = "") -> str:
-    """Load briefings from the last _HISTORY_DAYS days (excluding today) as historical context."""
+def _load_recent_briefings(target_date: date, group: str = "", history_days: int = 7) -> str:
+    """Load briefings from the last history_days days (excluding today) as historical context."""
     briefings_dir = DATA_DIR / "briefings"
     if not briefings_dir.exists():
         return ""
 
     blocks = []
-    for offset in range(1, _HISTORY_DAYS + 1):
+    for offset in range(1, history_days + 1):
         day = target_date - timedelta(days=offset)
         # Support optional group prefix (e.g. "tech-2026-03-07.md")
         candidates = [
@@ -49,32 +47,42 @@ def _load_recent_briefings(target_date: date, group: str = "") -> str:
     if not blocks:
         return ""
 
-    header = f"## Recent Coverage ({_HISTORY_DAYS}-day archive)\n\n"
+    header = f"## Recent Coverage ({history_days}-day archive)\n\n"
     return header + "\n\n---\n\n".join(blocks)
 
 
-async def _generate_with_retry(client: anthropic.AsyncAnthropic, model: str, system: str, user: str, max_tokens: int) -> str | None:
-    """Call messages.create with retry on rate-limit errors."""
-    for attempt in range(_RETRY_ATTEMPTS):
-        try:
-            response = await client.messages.create(
-                model=model,
-                max_tokens=max_tokens,
-                system=system,
-                messages=[{"role": "user", "content": user}],
-            )
-            return response.content[0].text
-        except anthropic.RateLimitError as e:
-            wait = 60
-            m = re.search(r"retry after (\d+)", str(e), re.IGNORECASE)
-            if m:
-                wait = int(m.group(1)) + 5
-            if attempt < _RETRY_ATTEMPTS - 1:
-                logger.warning("Rate limited — retrying in %ds (attempt %d/%d)", wait, attempt + 1, _RETRY_ATTEMPTS)
-                await asyncio.sleep(wait)
-                continue
-            raise
-    return None
+async def _generate_with_claude_cli(system: str, user: str, model: str) -> str | None:
+    """Call `claude --print` as an async subprocess.
+
+    Returns None on rate-limit (caller should skip to next cron run, not retry).
+    """
+    cmd = ["claude", "--print", "--model", model, "--max-turns", "1", "--system", system]
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(input=user.encode()), timeout=300)
+    except asyncio.TimeoutError:
+        logger.error("claude --print timed out after 300s")
+        return None
+
+    out = stdout.decode().strip()
+    err = stderr.decode().strip()
+
+    if proc.returncode != 0:
+        err_lower = err.lower()
+        if any(phrase in err_lower for phrase in _RATE_LIMIT_PHRASES):
+            logger.warning("claude --print rate limited — skipping to next cron run: %s", err)
+            return None  # Do not retry; next scheduled run will pick this up
+        logger.error("claude --print failed (exit %d): %s", proc.returncode, err)
+        return None
+
+    if err:
+        logger.debug("claude --print stderr: %s", err)
+    return out or None
 
 
 def _render_template(path, **kwargs) -> str:
@@ -85,7 +93,6 @@ def _render_template(path, **kwargs) -> str:
 
 
 async def _extract_show_summary(
-    client: anthropic.AsyncAnthropic,
     config: PipelineConfig,
     show: Show,
     transcript: str,
@@ -101,14 +108,13 @@ async def _extract_show_summary(
         date=target_date.isoformat(),
     )
     try:
-        return await _generate_with_retry(client, config.analysis.model, system_prompt, transcript, 1024)
+        return await _generate_with_claude_cli(system_prompt, transcript, config.analysis.model)
     except Exception as e:
-        logger.error("Claude API error (extract %s): %s", show.slug, e)
+        logger.error("claude --print error (extract %s): %s", show.slug, e)
         return None
 
 
 async def _synthesize(
-    client: anthropic.AsyncAnthropic,
     config: PipelineConfig,
     summaries: dict[str, str],
     target_date: date,
@@ -148,16 +154,15 @@ async def _synthesize(
 
     model = config.analysis.synthesis_model or config.analysis.model
     try:
-        result = await _generate_with_retry(client, model, system_prompt, user_message, config.analysis.max_tokens)
+        result = await _generate_with_claude_cli(system_prompt, user_message, model)
         logger.info("Analysis complete (model: %s)", model)
         return result
     except Exception as e:
-        logger.error("Claude API error (synthesize): %s", e)
+        logger.error("claude --print error (synthesize): %s", e)
         return None
 
 
 async def _update_ledger(
-    client: anthropic.AsyncAnthropic,
     config: PipelineConfig,
     briefing: str,
     existing_themes: list[dict],
@@ -178,7 +183,7 @@ async def _update_ledger(
     user_message = f"## Today's Briefing\n\n{briefing}\n\n## Current Ledger\n\n```yaml\n{ledger_yaml}\n```"
 
     try:
-        result = await _generate_with_retry(client, config.analysis.model, system_prompt, user_message, 2048)
+        result = await _generate_with_claude_cli(system_prompt, user_message, config.analysis.model)
         if not result:
             return existing_themes
 
@@ -201,7 +206,6 @@ async def _update_ledger(
 
 
 async def _single_show_fallback(
-    client: anthropic.AsyncAnthropic,
     config: PipelineConfig,
     show: Show,
     text: str,
@@ -214,9 +218,9 @@ async def _single_show_fallback(
         "the editorial angle, and key facts."
     )
     try:
-        return await _generate_with_retry(client, config.analysis.model, system, text, config.analysis.max_tokens)
+        return await _generate_with_claude_cli(system, text, config.analysis.model)
     except Exception as e:
-        logger.error("Claude API error (single-show): %s", e)
+        logger.error("claude --print error (single-show): %s", e)
         return None
 
 
@@ -225,12 +229,10 @@ async def analyze_transcripts(
     transcripts: dict[str, str],
     target_date: date,
 ) -> str | None:
-    """Send transcripts to Claude for cross-show analysis.
+    """Run cross-show analysis via `claude --print`.
 
     Returns the briefing text, or None on failure.
     """
-    client = anthropic.AsyncAnthropic(api_key=config.anthropic_api_key)
-
     if len(transcripts) == 0:
         logger.warning("No transcripts available for analysis")
         return None
@@ -242,7 +244,7 @@ async def analyze_transcripts(
         if show is None:
             logger.error("Unknown show slug: %s", slug)
             return None
-        return await _single_show_fallback(client, config, show, text, target_date)
+        return await _single_show_fallback(config, show, text, target_date)
 
     logger.info("Pass 1: extracting summaries from %d shows via %s", len(transcripts), config.analysis.model)
 
@@ -253,7 +255,7 @@ async def analyze_transcripts(
 
     async def _bounded_extract(slug, text):
         async with sem:
-            return await _extract_show_summary(client, config, shows_by_slug[slug], text, target_date)
+            return await _extract_show_summary(config, shows_by_slug[slug], text, target_date)
 
     tasks = [
         _bounded_extract(slug, text)
@@ -275,26 +277,26 @@ async def analyze_transcripts(
 
     # Load theme ledger and build context for Pass 2
     themes = load_ledger(config.group)
-    themes = prune_stale(themes, target_date)
+    themes = prune_stale(themes, target_date, config.analysis.stale_days)
     ledger_context = format_ledger_for_prompt(themes, target_date)
     if themes:
         logger.info("Loaded %d active themes from ledger", len(themes))
 
     # Load recent briefings for historical context
-    history_context = _load_recent_briefings(target_date, config.group)
+    history_context = _load_recent_briefings(target_date, config.group, config.analysis.history_days)
     if history_context:
-        logger.info("Loaded historical briefings for context (%d-day window)", _HISTORY_DAYS)
+        logger.info("Loaded historical briefings for context (%d-day window)", config.analysis.history_days)
 
     # Pass 2: synthesize summaries into briefing
     synthesis_model = config.analysis.synthesis_model or config.analysis.model
     logger.info("Pass 2: synthesizing cross-show briefing via %s", synthesis_model)
-    briefing = await _synthesize(client, config, summaries, target_date, ledger_context, history_context)
+    briefing = await _synthesize(config, summaries, target_date, ledger_context, history_context)
     if not briefing:
         return None
 
     # Pass 3: update theme ledger
     logger.info("Pass 3: updating theme ledger")
-    updated_themes = await _update_ledger(client, config, briefing, themes, target_date)
+    updated_themes = await _update_ledger(config, briefing, themes, target_date)
     save_ledger(config.group, updated_themes)
 
     return briefing

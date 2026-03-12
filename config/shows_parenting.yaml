@@ -32,6 +32,8 @@ analysis:
   synthesis_model: claude-opus-4-6
   prompt_file: config/prompt_parenting.md
   max_tokens: 4096
+  history_days: 49   # weekly pipeline — 7 weeks of briefing context
+  stale_days: 98     # drop story threads not seen in 14 weeks
 
 delivery:
   method: email
