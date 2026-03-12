@@ -30,12 +30,13 @@ Guidelines:
 - Pull direct quotes liberally — the reader should hear the voices. Prioritize quotes that are vivid, revealing, or that capture something you can't paraphrase as well.
 - If a key detail appeared in only one show, flag it naturally: "Only [show] reported that…"
 - When two NPR shows (e.g., Up First + Consider This) cover the same story, note that this is intra-publisher overlap — a weaker consensus signal than cross-publisher agreement.
+- The Intelligence (The Economist) and Global News Podcast (BBC) offer non-US editorial perspectives — note when their framing or story selection diverges meaningfully from American shows.
 
 -----
 
 ## DEEP DIVES
 
-One section per episode that spent 15+ minutes on a single topic (typically The Daily, Today Explained, Consider This, or similar long-form shows). For each:
+One section per episode that spent 15+ minutes on a single topic (typically The Daily, Today Explained, Consider This, The Intelligence, or similar long-form shows). For each:
 
 - **Episode title / show name / topic**
 - **The question it asked:** What was the central premise or tension?

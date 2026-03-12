@@ -31,6 +31,29 @@ shows:
     web_transcript:
       enabled: false
 
+  - slug: pivot
+    name: "Pivot"
+    publisher: Vox Media
+    rss_url: "https://feeds.megaphone.fm/pivot"
+    format: deep-dive
+    typical_length_min: 60
+    cadence: weekly
+    # Publishes Tue + Fri ~10:00 UTC; Friday episode available before noon PT pipeline run
+    web_transcript:
+      enabled: false
+
+  - slug: big-technology
+    name: "Big Technology"
+    publisher: Big Technology
+    rss_url: "https://feeds.megaphone.fm/LI3617121267"
+    format: analytical
+    typical_length_min: 45
+    cadence: weekly
+    # Publishes Wed/Fri ~16:00–22:00 UTC; Friday episode may drop after noon PT —
+    # if missed it will be caught the following week via 7-day cadence window
+    web_transcript:
+      enabled: false
+
 transcription:
   engine: faster-whisper
   model: tiny

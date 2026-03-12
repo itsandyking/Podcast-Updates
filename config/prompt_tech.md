@@ -5,7 +5,14 @@ Shows analyzed this week:
 - **{{ show.name }}** ({{ show.publisher }}) — {{ show.format }} format, {{ show.duration_min }} min
 {% endfor %}
 
-Your job is to make the reader feel like they listened to all of them — and caught the subtext. Hard Fork covers cultural and political implications of big tech; 404 Media investigates platform accountability; Decoder interviews executives about strategy and product decisions. Write with the confidence of a well-read tech editor.
+Your job is to make the reader feel like they listened to all of them — and caught the subtext. Each show has a distinct lens:
+- **Hard Fork** (NYT): cultural and political implications of big tech; often first to editorialize on major platform decisions
+- **404 Media**: independent investigative journalism on platform accountability and harms; stories bigger outlets often miss
+- **Decoder** (The Verge): long-form CEO and executive interviews; the most interesting signal is often what guests avoid saying
+- **Pivot** (Vox Media): business and power angle; Scott Galloway and Kara Swisher take explicit positions and disagree openly
+- **Big Technology** (Alex Kantrowitz): independent reporting on AI, platforms, and tech policy; strong on regulatory and antitrust angles
+
+Write with the confidence of a well-read tech editor.
 
 If active story threads are provided in the input, use them to enrich the briefing:
 - For continuing stories, note how many weeks they've been tracked and how the narrative has shifted
@@ -46,7 +53,7 @@ For Decoder interviews specifically: executives often reveal the most in how the
 
 ## INVESTIGATIVE & ACCOUNTABILITY
 
-Anything from 404 Media or other investigative angles — platform harms, corporate behavior, stories bigger outlets haven't picked up. For each:
+Anything from 404 Media, Big Technology, or other investigative angles — platform harms, corporate behavior, regulatory pressure, stories bigger outlets haven't picked up. For each:
 - What the story is and what evidence or sourcing was cited
 - Why it matters beyond the immediate incident
 - Whether it seems likely to develop further
@@ -73,4 +80,6 @@ Anything from 404 Media or other investigative angles — platform harms, corpor
 - Ignore ad reads and promotional segments entirely
 - When hosts speculate or give opinions, attribute clearly
 - Decoder interviews often bury the most interesting admissions in the second half — don't just summarize the top
-- 404 Media stories often have a longer tail — flag when something seems likely to develop further
+- 404 Media and Big Technology stories often have a longer tail — flag when something seems likely to develop further
+- Pivot hosts take explicit sides and disagree openly — preserve that, don't smooth it into consensus
+- When Pivot and Hard Fork cover the same story, their framing disagreement is often the most useful signal

@@ -87,6 +87,26 @@ shows:
     web_transcript:
       enabled: false
 
+  - slug: the-intelligence
+    name: "The Intelligence"
+    publisher: The Economist
+    rss_url: "https://access.acast.com/rss/d556eb54-6160-4c85-95f4-47d9f5216c49"
+    format: analytical
+    typical_length_min: 22
+    # Publishes Mon–Fri ~10:00 UTC; pipeline runs 14:00 UTC — should be available
+    web_transcript:
+      enabled: false
+
+  - slug: global-news-podcast
+    name: "Global News Podcast"
+    publisher: BBC World Service
+    rss_url: "https://podcasts.files.bbci.co.uk/p02nq0gn.rss"
+    format: survey
+    typical_length_min: 28
+    # Publishes morning edition ~05:30 UTC; well before pipeline run
+    web_transcript:
+      enabled: false
+
 transcription:
   engine: faster-whisper  # moonshine | faster-whisper | whisper-api
   model: tiny             # tiny | base | small | medium

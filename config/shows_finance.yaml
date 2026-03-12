@@ -41,6 +41,41 @@ shows:
     web_transcript:
       enabled: false
 
+  - slug: planet-money
+    name: "Planet Money"
+    publisher: NPR
+    rss_url: "https://feeds.npr.org/510289/podcast.xml"
+    format: analytical
+    typical_length_min: 25
+    cadence: weekly
+    # Publishes Wed + Fri; Friday episode timing unreliable at 9am PT —
+    # 7-day window ensures Wednesday episode is always captured
+    web_transcript:
+      enabled: false
+
+  - slug: odd-lots
+    name: "Odd Lots"
+    publisher: Bloomberg
+    rss_url: "https://omnycontent.com/d/playlist/e73c998e-6e60-432f-8610-ae210140c5b1/8A94442E-5A74-4FA2-8B8D-AE27003A8D6B/982F5071-765C-403D-969D-AE27003A8D83/podcast.rss"
+    format: deep-dive
+    typical_length_min: 60
+    cadence: weekly
+    # Publishes Mon + Thu ~09:00 UTC; Thursday episode reliably available by Friday 9am PT
+    web_transcript:
+      enabled: false
+
+  - slug: we-study-billionaires
+    name: "We Study Billionaires"
+    publisher: The Investor's Podcast Network
+    rss_url: "https://feeds.megaphone.fm/PPLLC8974708240"
+    format: deep-dive
+    typical_length_min: 60
+    cadence: weekly
+    # Multi-series feed (TIP / BTC / RWH sub-shows); drops Tue/Wed/Sat —
+    # Saturday episode won't be available Friday but 7-day window catches it the following week
+    web_transcript:
+      enabled: false
+
 transcription:
   engine: faster-whisper
   model: tiny
