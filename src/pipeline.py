@@ -129,7 +129,9 @@ async def run_pipeline(target_date: date | None = None, config_path: Path | None
     combined_path = save_daily_transcripts(config, transcripts, target_date)
 
     # Step 6: Analyze and deliver
-    if shutil.which("claude"):
+    # shutil.which respects PATH; fall back to the known install location for cron environments
+    claude_bin = shutil.which("claude") or "/home/piking5/.local/bin/claude"
+    if Path(claude_bin).exists():
         logger.info("Step 6: Running claude --print analysis")
         briefing = await analyze_transcripts(config, transcripts, target_date)
         if briefing and config.delivery.method == "email":
@@ -154,6 +156,54 @@ async def run_pipeline(target_date: date | None = None, config_path: Path | None
     return combined_path
 
 
+async def run_analyze_only(target_date: date | None = None, config_path: Path | None = None) -> bool:
+    """Load saved transcripts for target_date and re-run analysis + email delivery."""
+    if target_date is None:
+        target_date = datetime.now(timezone.utc).date()
+
+    setup_logging(target_date)
+    config = load_config(config_path)
+
+    from .config import ROOT_DIR
+    if config.group:
+        transcript_dir = ROOT_DIR / "daily_transcripts" / target_date.isoformat() / config.group
+    else:
+        transcript_dir = ROOT_DIR / "daily_transcripts" / target_date.isoformat()
+
+    if not transcript_dir.exists():
+        logger.error("No saved transcripts found at %s", transcript_dir)
+        return False
+
+    transcripts: dict[str, str] = {}
+    for show in config.shows:
+        p = transcript_dir / f"{show.slug}.md"
+        if p.exists():
+            transcripts[show.slug] = p.read_text()
+            logger.info("Loaded transcript: %s (%d chars)", show.slug, len(transcripts[show.slug]))
+
+    if not transcripts:
+        logger.error("No transcript files found in %s", transcript_dir)
+        return False
+
+    # Fetch episodes from RSS to get GUIDs for the ledger
+    episodes = fetch_all_episodes(config.shows, target_date)
+
+    logger.info("Running analysis on %d saved transcripts for %s", len(transcripts), target_date)
+    briefing = await analyze_transcripts(config, transcripts, target_date)
+    if not briefing:
+        logger.error("Analysis failed")
+        return False
+
+    from .deliver import save_briefing
+    save_briefing(config, briefing, target_date, {s: "saved" for s in transcripts})
+
+    if config.delivery.method == "email":
+        ok = deliver_email(briefing, target_date)
+        if ok and episodes:
+            mark_processed(episodes, config.group, target_date)
+    return True
+
+
 def main() -> None:
     """CLI entry point."""
     args = sys.argv[1:]
@@ -170,6 +220,25 @@ def main() -> None:
             i += 1
 
     result = asyncio.run(run_pipeline(target, config_path))
+    sys.exit(0 if result else 1)
+
+
+def main_analyze() -> None:
+    """CLI entry point for re-running analysis on already-fetched transcripts."""
+    args = sys.argv[1:]
+    target = None
+    config_path = None
+
+    i = 0
+    while i < len(args):
+        if args[i] == "--config" and i + 1 < len(args):
+            config_path = Path(args[i + 1])
+            i += 2
+        else:
+            target = date.fromisoformat(args[i])
+            i += 1
+
+    result = asyncio.run(run_analyze_only(target, config_path))
     sys.exit(0 if result else 1)
 
 

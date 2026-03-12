@@ -67,29 +67,29 @@ Config: `config/shows_parenting.yaml` — Prompt: `config/prompt_claude_parentin
 
 ## Schedule
 
-All times UTC. Pi local time is PT (UTC-8 standard / UTC-7 daylight).
+Cron runs in the Pi's local timezone (`America/Los_Angeles`), so times are PT and DST is handled automatically.
 
-| Pipeline | Cron | UTC | PT | Day(s) |
-|---|---|---|---|---|
-| News | `0 15 * * 1-6` | 3pm | 7am | Mon–Sat |
-| Parenting | `0 14 * * 2` | 2pm | 6am | Tuesday |
-| Tech | `0 14 * * 5` | 2pm | 6am | Friday |
-| Finance | `0 17 * * 5` | 5pm | 9am | Friday |
+| Pipeline | Cron | PT | Day(s) |
+|---|---|---|---|
+| News | `0 7 * * 1-6` | 7am | Mon–Sat |
+| Finance | `0 9 * * 5` | 9am | Friday |
+| Tech | `0 12 * * 5` | noon | Friday |
+| Parenting | `0 6 * * 2` | 6am | Tuesday |
 
 ### Crontab entries
 
 ```
 # news — Mon–Sat 7am PT
-0 15 * * 1-6  cd /home/piking5/Podcast-Updates && .venv/bin/python -m src.pipeline
+0 7 * * 1-6  /home/piking5/Podcast-Updates/.venv/bin/podcast-updates
 
-# parenting — Tue 6am PT (both shows publish Tue mornings UTC)
-0 14 * * 2    cd /home/piking5/Podcast-Updates && .venv/bin/python -m src.pipeline --config config/shows_parenting.yaml
+# finance — Fri 9am PT
+0 9 * * 5    cd /home/piking5/Podcast-Updates && .venv/bin/python -m src.pipeline --config config/shows_finance.yaml
 
-# tech — Fri 6am PT (Hard Fork publishes Fri noon UTC; run after that)
-0 14 * * 5    cd /home/piking5/Podcast-Updates && .venv/bin/python -m src.pipeline --config config/shows_tech.yaml
+# tech — Fri noon PT (after Hard Fork drops)
+0 12 * * 5   cd /home/piking5/Podcast-Updates && .venv/bin/python -m src.pipeline --config config/shows_tech.yaml
 
-# finance — Fri 9am PT (3h after tech to avoid Pi overlap; The Bid publishes Fri 5am UTC)
-0 17 * * 5    cd /home/piking5/Podcast-Updates && .venv/bin/python -m src.pipeline --config config/shows_finance.yaml
+# parenting — Tue 6am PT
+0 6 * * 2    cd /home/piking5/Podcast-Updates && .venv/bin/python -m src.pipeline --config config/shows_parenting.yaml
 ```
 
 ---
@@ -108,6 +108,20 @@ Cron trigger
 NPR shows use web-published transcripts to save compute. All other shows download and transcribe audio locally. Weekly group outputs go to `daily_transcripts/{date}/{group}/`, news goes to `daily_transcripts/{date}/`.
 
 The combined transcript file is emailed as a Markdown attachment with the Claude analysis prompt prepended — open it in Claude.ai to generate the briefing.
+
+---
+
+## Email Formatting
+
+Briefing emails are sent as `multipart/alternative` with a plain-text fallback and a styled HTML part. The HTML is rendered from the Markdown output and styled to match the Claude iOS chat aesthetic:
+
+- **Font:** `-apple-system` / SF Pro Text stack
+- **Background:** `#F2F2F7` (iOS system gray), white rounded card (18px radius)
+- **Accents:** `#007AFF` iOS blue for the header and links
+- **Typography:** weighted `h1`/`h2`/`h3` hierarchy, semibold `strong`, italic `em`, monospace code blocks with `#F5F5F7` background
+- **Dividers/quotes:** subtle `#E5E5EA` rules and left-bordered blockquotes
+
+All four pipelines (news, tech, finance, parenting) use the same `deliver_email` function, so the styling applies everywhere.
 
 ---
 
@@ -172,5 +186,5 @@ python -m src.pipeline --config config/shows_tech.yaml 2026-02-28
 
 - **Hardware:** Raspberry Pi 5 (16GB RAM, 512GB NVMe)
 - **Transcription:** faster-whisper (tiny model)
-- **Analysis:** Google Gemini 2.5 Flash Lite (free tier)
-- **Cost:** $0/month
+- **Analysis:** Claude Sonnet 4.6 (Anthropic API, ~$8/month)
+- **Cost:** ~$8/month

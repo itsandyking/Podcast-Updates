@@ -41,4 +41,4 @@ delivery:
   claude_prompt_file: config/prompt_claude_parenting.md
 
 schedule:
-  cron: "0 14 * * 2"  # Tue 2pm UTC / 6am PT — both shows publish Tuesday mornings UTC
+  cron: "0 6 * * 2"   # Tue 6am PT (Pi local time, DST-aware)

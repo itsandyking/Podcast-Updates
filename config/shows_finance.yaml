@@ -61,4 +61,4 @@ delivery:
   claude_prompt_file: config/prompt_claude_finance.md
 
 schedule:
-  cron: "0 17 * * 5"  # Fri 5pm UTC / 9am PT — 3h after tech run to avoid Pi overlap
+  cron: "0 9 * * 5"   # Fri 9am PT (Pi local time, DST-aware) — 3h before tech run

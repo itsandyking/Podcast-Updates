@@ -5,7 +5,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import shutil
 from datetime import date, timedelta
+from pathlib import Path
 
 import jinja2
 import yaml
@@ -56,7 +58,8 @@ async def _generate_with_claude_cli(system: str, user: str, model: str) -> str |
 
     Returns None on rate-limit (caller should skip to next cron run, not retry).
     """
-    cmd = ["claude", "--print", "--model", model, "--max-turns", "1", "--system", system]
+    claude_bin = shutil.which("claude") or "/home/piking5/.local/bin/claude"
+    cmd = [claude_bin, "--print", "--model", model, "--max-turns", "1", "--system-prompt", system]
     try:
         proc = await asyncio.create_subprocess_exec(
             *cmd,

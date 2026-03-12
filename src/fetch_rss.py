@@ -23,6 +23,7 @@ class Episode:
     duration_seconds: int | None = None
     description: str = ""
     link: str = ""
+    guid: str = ""
 
 
 def fetch_latest_episode(show: Show, target_date: date) -> Episode | None:
@@ -89,6 +90,7 @@ def fetch_latest_episode(show: Show, target_date: date) -> Episode | None:
         duration_seconds=duration,
         description=entry.get("summary", ""),
         link=entry.get("link", ""),
+        guid=entry.get("id", entry.get("link", "")),
     )
 
     # Date filtering: skip episodes older than the cadence window
@@ -105,12 +107,13 @@ def fetch_latest_episode(show: Show, target_date: date) -> Episode | None:
         )
         return None
 
-    if episode.published.date() < target_date:
+    if episode.published.date() < target_date and not show.afternoon_release and show.cadence != "weekly":
         logger.warning(
-            "%s: using episode from %s (today's episode not yet published?)",
+            "Skipping %s — latest episode (%s) is from a prior day, not today",
             show.name,
             episode.published.date().isoformat(),
         )
+        return None
 
     return episode
 

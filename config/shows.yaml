@@ -106,4 +106,4 @@ delivery:
   output_dir: data/briefings
 
 schedule:
-  cron: "0 7 * * 1-6"    # 7am PT, Mon-Sat
+  cron: "0 7 * * 1-6"    # 7am PT Mon–Sat (Pi local time, DST-aware)
