@@ -16,10 +16,12 @@ env/
 # Environment variables
 .env
 
-# Data (transcripts and audio are local-only)
+# Data (runtime-only, local to this machine)
 data/transcripts/
 data/briefings/
 data/logs/
+data/episode_ledger/
+data/themes/
 daily_transcripts/
 *.mp3
 *.wav
