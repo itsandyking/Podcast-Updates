@@ -74,4 +74,4 @@ delivery:
   claude_prompt_file: config/prompt_claude_tech.md
 
 schedule:
-  cron: "0 12 * * 5"  # Fri noon PT (Pi local time, DST-aware) — after Hard Fork drops
+  cron: "0 17 * * 5"  # Fri 5pm PT (Pi local time, DST-aware) — after Hard Fork/Pivot/Big Technology all drop

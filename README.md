@@ -72,8 +72,8 @@ Cron runs in the Pi's local timezone (`America/Los_Angeles`), so times are PT an
 | Pipeline | Cron | PT | Day(s) |
 |---|---|---|---|
 | News | `0 7 * * 1-6` | 7am | Mon–Sat |
-| Finance | `0 9 * * 5` | 9am | Friday |
-| Tech | `0 12 * * 5` | noon | Friday |
+| Tech | `0 17 * * 5` | 5pm | Friday |
+| Finance | `0 9 * * 6` | 9am | Saturday |
 | Parenting | `0 6 * * 2` | 6am | Tuesday |
 
 ### Crontab entries
@@ -82,11 +82,11 @@ Cron runs in the Pi's local timezone (`America/Los_Angeles`), so times are PT an
 # news — Mon–Sat 7am PT
 0 7 * * 1-6  /home/piking5/Podcast-Updates/.venv/bin/podcast-updates
 
-# finance — Fri 9am PT
-0 9 * * 5    cd /home/piking5/Podcast-Updates && .venv/bin/python -m src.pipeline --config config/shows_finance.yaml
+# tech — Fri 5pm PT (Hard Fork ~5am, Pivot ~3am, Big Technology up to ~3pm — all available)
+0 17 * * 5   cd /home/piking5/Podcast-Updates && .venv/bin/python -m src.pipeline --config config/shows_tech.yaml
 
-# tech — Fri noon PT (after Hard Fork drops)
-0 12 * * 5   cd /home/piking5/Podcast-Updates && .venv/bin/python -m src.pipeline --config config/shows_tech.yaml
+# finance — Sat 9am PT (catches We Study Billionaires Sat drops; no Pi overlap with tech)
+0 9 * * 6    cd /home/piking5/Podcast-Updates && .venv/bin/python -m src.pipeline --config config/shows_finance.yaml
 
 # parenting — Tue 6am PT
 0 6 * * 2    cd /home/piking5/Podcast-Updates && .venv/bin/python -m src.pipeline --config config/shows_parenting.yaml
