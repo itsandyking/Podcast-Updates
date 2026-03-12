@@ -78,6 +78,15 @@ shows:
     web_transcript:
       enabled: false
 
+  - slug: on-point
+    name: "On Point"
+    publisher: WBUR
+    rss_url: "https://rss.wbur.org/onpoint/podcast"
+    format: deep-dive
+    typical_length_min: 46
+    web_transcript:
+      enabled: false
+
   - slug: wsj-take-on-the-week
     name: "WSJ's Take on the Week"
     publisher: WSJ
