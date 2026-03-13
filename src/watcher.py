@@ -6,7 +6,10 @@ Syncthing), downloads the audio, and transcribes to the stable cache path:
 
     data/transcripts/{show_slug}/{pub_date}.txt
 
-The main pipeline then finds the transcript in cache and skips download/transcription.
+When all expected (non-afternoon, daily) shows for a config have transcripts, the
+watcher automatically triggers the analysis pipeline. A deadline from the schedule
+acts as a safety net — if the deadline passes with >= 2 transcripts, it triggers
+anyway to handle shows that skip a day or publish late.
 """
 
 from __future__ import annotations
@@ -15,12 +18,13 @@ import asyncio
 import logging
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 import httpx
+import yaml
 
-from .config import DATA_DIR, ROOT_DIR, load_config
+from .config import DATA_DIR, PipelineConfig, ROOT_DIR, load_config
 from .download_audio import download_episode
 from .fetch_rss import Episode, fetch_all_episodes
 from .transcribe import TRANSCRIPT_DIR, stable_transcript_path, transcribe_audio
@@ -36,6 +40,9 @@ _DEFAULT_CONFIG_PATHS = [
     ROOT_DIR / "config" / "shows_finance.yaml",
     ROOT_DIR / "config" / "shows_parenting.yaml",
 ]
+
+# Minimum transcripts needed before the deadline safety-net triggers.
+_MIN_TRANSCRIPTS_FOR_DEADLINE = 2
 
 
 def _claim_path(show_slug: str, pub_date_str: str) -> Path:
@@ -70,6 +77,141 @@ def _try_claim(show_slug: str, pub_date_str: str) -> bool:
 
 def _release_claim(show_slug: str, pub_date_str: str) -> None:
     _claim_path(show_slug, pub_date_str).unlink(missing_ok=True)
+
+
+# ── Trigger logic ────────────────────────────────────────────────────────────
+
+
+def _trigger_flag_path(config_path: Path, target_date: date) -> Path:
+    """Flag file that prevents triggering the same pipeline twice per day."""
+    name = config_path.stem  # e.g. "shows" or "shows_tech"
+    return DATA_DIR / "watcher" / f"{name}_{target_date.isoformat()}.triggered"
+
+
+def _already_triggered(config_path: Path, target_date: date) -> bool:
+    return _trigger_flag_path(config_path, target_date).exists()
+
+
+def _mark_triggered(config_path: Path, target_date: date) -> None:
+    flag = _trigger_flag_path(config_path, target_date)
+    flag.parent.mkdir(parents=True, exist_ok=True)
+    flag.touch()
+
+
+def _expected_shows(config: PipelineConfig, target_date: date) -> list[str]:
+    """Return slugs of shows expected to have episodes today (non-afternoon, daily)."""
+    weekday = target_date.weekday()  # 0=Mon, 6=Sun
+    expected = []
+    for show in config.shows:
+        if show.afternoon_release:
+            continue
+        if show.cadence == "weekly":
+            continue
+        # Daily shows publish Mon-Sat (skip Sunday for news)
+        if weekday == 6:  # Sunday
+            continue
+        expected.append(show.slug)
+    return expected
+
+
+def _ready_transcripts(config: PipelineConfig, target_date: date) -> set[str]:
+    """Return slugs of shows that have a transcript for target_date."""
+    date_str = target_date.isoformat()
+    ready = set()
+    for show in config.shows:
+        if stable_transcript_path(show.slug, date_str).exists():
+            ready.add(show.slug)
+    return ready
+
+
+def _parse_deadline_hour(config_path: Path) -> int | None:
+    """Extract the hour from the schedule.cron field in a config YAML.
+
+    Returns the hour as an int, or None if no schedule is configured.
+    """
+    try:
+        with open(config_path) as f:
+            raw = yaml.safe_load(f)
+        cron = raw.get("schedule", {}).get("cron", "")
+        if not cron:
+            return None
+        # cron format: "minute hour day month weekday"
+        parts = cron.split()
+        return int(parts[1])
+    except Exception:
+        return None
+
+
+def _should_trigger(
+    config: PipelineConfig,
+    config_path: Path,
+    target_date: date,
+) -> bool:
+    """Decide whether to trigger the analysis pipeline.
+
+    Triggers when:
+    1. All expected (non-afternoon, daily) shows have transcripts, OR
+    2. The deadline hour has passed and we have >= _MIN_TRANSCRIPTS_FOR_DEADLINE transcripts.
+
+    Never triggers if already triggered today for this config.
+    """
+    if _already_triggered(config_path, target_date):
+        return False
+
+    ready = _ready_transcripts(config, target_date)
+    if not ready:
+        return False
+
+    expected = _expected_shows(config, target_date)
+
+    # Condition 1: all expected shows are ready
+    if expected and all(slug in ready for slug in expected):
+        missing_afternoon = [
+            s.name for s in config.shows
+            if s.afternoon_release and s.slug not in ready and s.cadence != "weekly"
+        ]
+        if missing_afternoon:
+            logger.info(
+                "Watcher: all expected morning shows ready. Afternoon shows still pending: %s",
+                ", ".join(missing_afternoon),
+            )
+        logger.info(
+            "Watcher: all %d expected shows have transcripts — triggering pipeline",
+            len(expected),
+        )
+        return True
+
+    # Condition 2: deadline safety net
+    deadline_hour = _parse_deadline_hour(config_path)
+    if deadline_hour is not None:
+        now = datetime.now()
+        if now.hour >= deadline_hour and len(ready) >= _MIN_TRANSCRIPTS_FOR_DEADLINE:
+            logger.info(
+                "Watcher: deadline %02d:00 passed with %d/%d transcripts — triggering pipeline",
+                deadline_hour, len(ready), len(expected) if expected else len(config.shows),
+            )
+            return True
+
+    return False
+
+
+async def _trigger_pipeline(config_path: Path, target_date: date) -> None:
+    """Run the full pipeline (analysis + email) for a config."""
+    from .pipeline import run_pipeline
+
+    config_name = config_path.stem
+    logger.info("Watcher: triggering pipeline for %s (%s)", config_name, target_date)
+    try:
+        result = await run_pipeline(target_date, config_path)
+        if result:
+            logger.info("Watcher: pipeline complete for %s — %s", config_name, result)
+        else:
+            logger.warning("Watcher: pipeline returned no result for %s", config_name)
+    except Exception as exc:
+        logger.error("Watcher: pipeline failed for %s: %s", config_name, exc)
+
+
+# ── Episode processing ───────────────────────────────────────────────────────
 
 
 async def _fetch_podcast_transcript(url: str) -> str | None:
@@ -135,11 +277,10 @@ async def _process_episode(
             logger.warning("Watcher: transcription returned nothing for %s", ep.title)
     finally:
         # Release claim whether we succeeded or failed
-        if not text:
-            _release_claim(ep.show_slug, pub_date_str)
-        # If text was written, the transcript file IS the permanent record; keep claim deleted.
-        else:
-            _release_claim(ep.show_slug, pub_date_str)
+        _release_claim(ep.show_slug, pub_date_str)
+
+
+# ── Main loop ────────────────────────────────────────────────────────────────
 
 
 async def watch(
@@ -148,6 +289,9 @@ async def watch(
     max_concurrent_transcriptions: int = 2,
 ) -> None:
     """Poll all configured show feeds and pre-transcribe new episodes.
+
+    After each poll cycle, checks if enough transcripts are ready to trigger
+    the analysis pipeline for each config.
 
     interval_secs: how often to re-poll each config (default 15 min)
     max_concurrent_transcriptions: semaphore cap for CPU-bound transcription
@@ -178,6 +322,12 @@ async def watch(
                 ]
                 if tasks:
                     await asyncio.gather(*tasks, return_exceptions=True)
+
+                # Check if we should trigger the pipeline
+                if _should_trigger(config, config_path, target_date):
+                    _mark_triggered(config_path, target_date)
+                    await _trigger_pipeline(config_path, target_date)
+
             except Exception as exc:
                 logger.error("Watcher error processing %s: %s", config_path.name, exc)
 

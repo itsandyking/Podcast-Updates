@@ -23,6 +23,7 @@ data/briefings/
 data/logs/
 data/episode_ledger/
 data/themes/
+data/watcher/
 daily_transcripts/
 *.mp3
 *.wav
