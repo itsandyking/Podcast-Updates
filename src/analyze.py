@@ -58,7 +58,7 @@ async def _generate_with_claude_cli(system: str, user: str, model: str) -> str |
 
     Returns None on rate-limit (caller should skip to next cron run, not retry).
     """
-    claude_bin = shutil.which("claude") or "/home/piking5/.local/bin/claude"
+    claude_bin = shutil.which("claude") or str(Path.home() / ".local" / "bin" / "claude")
     cmd = [claude_bin, "--print", "--model", model, "--max-turns", "1", "--system-prompt", system]
     try:
         proc = await asyncio.create_subprocess_exec(
