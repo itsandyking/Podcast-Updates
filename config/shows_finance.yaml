@@ -78,7 +78,7 @@ shows:
 
 transcription:
   engine: faster-whisper
-  model: tiny
+  model: base
   cleanup_audio: true
 
 analysis:

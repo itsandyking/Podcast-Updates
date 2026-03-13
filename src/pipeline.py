@@ -85,62 +85,77 @@ async def run_pipeline(target_date: date | None = None, config_path: Path | None
         return combined_path if combined_path.exists() else None
     episodes = fresh
 
-    # Step 2 & 3: Get transcripts (web or audio+STT)
-    # Group episodes by show — weekly pipelines may have several per show
-    transcripts: dict[str, str] = {}
-    transcript_sources: dict[str, str] = {}
+    # Step 2–4: Fetch transcripts for all episodes in parallel.
+    # Downloads are I/O-bound and run fully concurrently.
+    # Transcription is CPU-bound; a semaphore caps it at 2 concurrent jobs
+    # to use the Pi's 4 cores efficiently without thrashing.
     shows_by_slug = {s.slug: s for s in config.shows}
 
     episodes_by_show: dict[str, list] = defaultdict(list)
     for ep in episodes:
         episodes_by_show[ep.show_slug].append(ep)
 
+    transcription_sem = asyncio.Semaphore(2)
+
+    async def _fetch_transcript(ep, show, ep_key):
+        """Download + transcribe one episode. Returns (episode, text, source)."""
+        web_text = await try_web_transcript(ep, show)
+        if web_text:
+            logger.info("Web transcript: %s — %s", ep.show_name, ep.title)
+            return ep, web_text, f"{show.web_transcript.parser}_web"
+
+        logger.info("Downloading: %s — %s", ep.show_name, ep.title)
+        audio_path = await download_episode(ep, date_str, ep_key)
+        if not audio_path:
+            logger.warning("Download failed: %s — skipping", ep.title)
+            return ep, None, None
+
+        logger.info("Transcribing: %s — %s", ep.show_name, ep.title)
+        async with transcription_sem:
+            loop = asyncio.get_event_loop()
+            text = await loop.run_in_executor(
+                None, transcribe_audio,
+                audio_path, ep.show_slug, date_str, config.transcription, ep_key,
+            )
+        if text:
+            return ep, text, config.transcription.engine
+        logger.warning("Transcription failed: %s", ep.title)
+        return ep, None, None
+
+    # Build one task per episode across all shows
+    tasks = []
     for show_slug, show_episodes in episodes_by_show.items():
         show = shows_by_slug.get(show_slug)
         if not show:
             continue
-
         multi = len(show_episodes) > 1
-        collected: list[tuple] = []  # (episode, text)
-
         for ep in show_episodes:
-            # Use a date-scoped key when a show has multiple episodes to avoid filename collisions
             ep_key = f"{show_slug}-{ep.published.strftime('%Y%m%d')}" if multi else show_slug
+            tasks.append(_fetch_transcript(ep, show, ep_key))
 
-            logger.info("Step 2: Checking web transcript for %s: %s", ep.show_name, ep.title)
-            web_text = await try_web_transcript(ep, show)
-            if web_text:
-                collected.append((ep, web_text))
-                transcript_sources[show_slug] = f"{show.web_transcript.parser}_web"
-                logger.info("Using web transcript for %s", ep.title)
-                continue
+    results = await asyncio.gather(*tasks)
 
-            logger.info("Step 3: Downloading audio for %s: %s", ep.show_name, ep.title)
-            audio_path = await download_episode(ep, date_str, ep_key)
-            if not audio_path:
-                logger.warning("Could not download audio for %s — skipping", ep.title)
-                continue
+    # Regroup by show, sort oldest-first, concatenate multi-episode blocks
+    transcripts: dict[str, str] = {}
+    transcript_sources: dict[str, str] = {}
+    collected_by_show: dict[str, list] = defaultdict(list)
+    for ep, text, source in results:
+        if text:
+            collected_by_show[ep.show_slug].append((ep, text))
+            if source:
+                transcript_sources[ep.show_slug] = source
 
-            logger.info("Step 4: Transcribing %s", ep.title)
-            text = transcribe_audio(audio_path, show_slug, date_str, config.transcription, ep_key)
-            if text:
-                collected.append((ep, text))
-                transcript_sources[show_slug] = config.transcription.engine
-            else:
-                logger.warning("Transcription failed for %s", ep.title)
-
-        if not collected:
-            continue
-
+    for show_slug, collected in collected_by_show.items():
+        collected.sort(key=lambda x: x[0].published)
         if len(collected) == 1:
             transcripts[show_slug] = collected[0][1]
         else:
-            blocks = []
-            for ep, text in collected:
-                pub = ep.published.strftime("%-d %b %Y")
-                blocks.append(f"### \"{ep.title}\" ({pub})\n\n{text}")
+            blocks = [
+                f"### \"{ep.title}\" ({ep.published.strftime('%-d %b %Y')})\n\n{text}"
+                for ep, text in collected
+            ]
             transcripts[show_slug] = "\n\n---\n\n".join(blocks)
-            logger.info("Combined %d episodes for %s", len(collected), show.name)
+            logger.info("Combined %d episodes for %s", len(collected), show_slug)
 
     total_episodes = sum(len(v) for v in episodes_by_show.values())
     logger.info("Transcripts ready: %d/%d shows (%d episodes)", len(transcripts), len(episodes_by_show), total_episodes)

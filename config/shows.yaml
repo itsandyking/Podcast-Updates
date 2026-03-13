@@ -118,7 +118,7 @@ shows:
 
 transcription:
   engine: faster-whisper  # moonshine | faster-whisper | whisper-api
-  model: tiny             # tiny | base | small | medium
+  model: base             # tiny | base | small | medium
   cleanup_audio: true     # Delete MP3s after transcription
 
 analysis:
