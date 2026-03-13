@@ -147,7 +147,7 @@ if [ "$OS" = "Darwin" ] && [ "$ARCH" = "arm64" ]; then
 fi
 
 # ── 4. Email credentials ───────────────────────────────────────────────────────
-header "4. Email credentials (Gmail SMTP)"
+header "4. Email credentials (iCloud SMTP)"
 
 if [ ! -f "$ENV_FILE" ]; then
     cp "$REPO_DIR/config/.env.example" "$ENV_FILE"
@@ -162,9 +162,9 @@ done
 if [ "$all_set" = "1" ] && [ "${AUTO_YES:-}" = "1" ]; then
     success "Email already configured ($(env_get SMTP_USER))"
 else
-    echo "  Gmail app password: myaccount.google.com → Security → 2-Step → App passwords"
-    prompt "SMTP_USER"     "Gmail address"
-    prompt "SMTP_PASSWORD" "App password (16 chars)" "" secret
+    echo "  App-specific password: appleid.apple.com → Sign-In & Security → App-Specific Passwords"
+    prompt "SMTP_USER"     "Apple ID email"
+    prompt "SMTP_PASSWORD" "App-specific password (xxxx-xxxx-xxxx-xxxx)" "" secret
     prompt "EMAIL_TO"      "Deliver briefings to"
     success "Email configured"
 fi
