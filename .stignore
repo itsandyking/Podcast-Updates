@@ -12,6 +12,9 @@ __pycache__/
 .venv/
 *.egg-info/
 
+# Machine-specific env overrides (transcription engine differs per machine)
+config/.env.local
+
 # Editor and OS artifacts
 .DS_Store
 *.swp

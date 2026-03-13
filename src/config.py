@@ -72,6 +72,7 @@ class PipelineConfig:
 def load_config(config_path: Path | None = None) -> PipelineConfig:
     """Load pipeline configuration from shows.yaml and environment variables."""
     load_dotenv(CONFIG_DIR / ".env")
+    load_dotenv(CONFIG_DIR / ".env.local", override=True)  # machine-specific overrides
 
     if config_path is None:
         config_path = CONFIG_DIR / "shows.yaml"
@@ -102,6 +103,10 @@ def load_config(config_path: Path | None = None) -> PipelineConfig:
         )
 
     transcription = TranscriptionConfig(**raw.get("transcription", {}))
+    # Allow per-machine override via env var (avoids Syncthing config conflicts)
+    engine_override = os.environ.get("TRANSCRIPTION_ENGINE")
+    if engine_override:
+        transcription.engine = engine_override
     analysis = AnalysisConfig(**raw.get("analysis", {}))
     delivery = DeliveryConfig(**raw.get("delivery", {}))
 

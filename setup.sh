@@ -129,22 +129,18 @@ else
     success "Installed with faster-whisper"
 fi
 
-# ── 3. Shows config: set mlx-whisper engine on Mac ───────────────────────────
+# ── 3. Transcription engine (per-machine, via .env.local — not synced) ────────
+header "3. Transcription engine"
+LOCAL_ENV="$REPO_DIR/config/.env.local"
 if [ "$OS" = "Darwin" ] && [ "$ARCH" = "arm64" ]; then
-    header "3. Transcription engine"
-    info "Checking shows.yaml files for mlx-whisper..."
-    for cfg in shows.yaml shows_tech.yaml shows_finance.yaml shows_parenting.yaml; do
-        cfg_path="$REPO_DIR/config/$cfg"
-        [ -f "$cfg_path" ] || continue
-        if grep -q "engine: faster-whisper" "$cfg_path"; then
-            sed -i.bak "s/engine: faster-whisper/engine: mlx-whisper/" "$cfg_path"
-            rm -f "${cfg_path}.bak"
-            success "  $cfg → engine: mlx-whisper"
-        elif grep -q "engine: mlx-whisper" "$cfg_path"; then
-            success "  $cfg already uses mlx-whisper"
-        fi
-    done
+    engine="mlx-whisper"
+else
+    engine="faster-whisper"
 fi
+mkdir -p "$(dirname "$LOCAL_ENV")"
+echo "# Machine-specific overrides (not synced via Syncthing)
+TRANSCRIPTION_ENGINE=$engine" > "$LOCAL_ENV"
+success "TRANSCRIPTION_ENGINE=$engine (set in config/.env.local)"
 
 # ── 4. Email credentials ───────────────────────────────────────────────────────
 header "4. Email credentials (iCloud SMTP)"

@@ -15,6 +15,7 @@ env/
 
 # Environment variables
 .env
+.env.local
 
 # Data (runtime-only, local to this machine)
 data/transcripts/
