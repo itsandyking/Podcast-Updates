@@ -197,71 +197,212 @@ fi
 header "7. Scheduler"
 
 VENV_BIN="$VENV/bin"
+LOGDIR="$REPO_DIR/data/logs"
+
+# Read schedule.cron from a shows.yaml file using Python (single source of truth).
+# Returns empty string if the key is absent (e.g. a future pipeline with no schedule yet).
+yaml_cron() {
+    local cfg="$1"
+    "$VENV_BIN/python" -c "
+import yaml, sys
+raw = yaml.safe_load(open('$cfg'))
+print(raw.get('schedule', {}).get('cron', ''))
+" 2>/dev/null || true
+}
+
+# Collect every shows_*.yaml plus shows.yaml, sorted by name
+config_files=()
+for cfg in "$REPO_DIR/config/shows.yaml" "$REPO_DIR/config"/shows_*.yaml; do
+    [ -f "$cfg" ] && config_files+=("$cfg")
+done
 
 if [ "$OS" = "Linux" ]; then
     # ── Pi / Linux: cron ──────────────────────────────────────────────────────
+    # Build the managed block fresh from config each run — fully idempotent for
+    # schedule changes, new pipelines, and deleted pipelines.
 
-    LOGDIR="$REPO_DIR/data/logs"
+    MARKER_BEGIN="# BEGIN podcast-updates (managed by setup.sh — do not edit)"
+    MARKER_END="# END podcast-updates"
 
-    # Each entry: "guard_string|cron_line"
-    # Guard string is grepped against existing crontab to detect duplicates.
-    CRON_ENTRIES=(
-        "podcast-updates --news|0 7 * * 1-6 ${VENV_BIN}/podcast-updates >> ${LOGDIR}/news.log 2>&1"
-        "podcast-updates --tech|0 17 * * 5 ${VENV_BIN}/podcast-updates --config ${REPO_DIR}/config/shows_tech.yaml >> ${LOGDIR}/tech.log 2>&1"
-        "podcast-updates --finance|0 9 * * 6 ${VENV_BIN}/podcast-updates --config ${REPO_DIR}/config/shows_finance.yaml >> ${LOGDIR}/finance.log 2>&1"
-        "podcast-updates --parenting|0 6 * * 2 ${VENV_BIN}/podcast-updates --config ${REPO_DIR}/config/shows_parenting.yaml >> ${LOGDIR}/parenting.log 2>&1"
-        "podcast-watch|@reboot ${VENV_BIN}/podcast-watch >> ${LOGDIR}/watcher.log 2>&1"
-    )
+    # Generate the managed block
+    BLOCK="$MARKER_BEGIN"$'\n'
+    BLOCK+="@reboot ${VENV_BIN}/podcast-watch >> ${LOGDIR}/watcher.log 2>&1"$'\n'
 
-    # Read current crontab (empty string if none)
-    CURRENT_CRON="$(crontab -l 2>/dev/null || true)"
-    NEW_CRON="$CURRENT_CRON"
+    for cfg in "${config_files[@]}"; do
+        cron_expr="$(yaml_cron "$cfg")"
+        [ -z "$cron_expr" ] && continue
 
-    for entry in "${CRON_ENTRIES[@]}"; do
-        guard="${entry%%|*}"
-        line="${entry#*|}"
+        name="$(basename "$cfg" .yaml | sed 's/shows_//')"
+        [ "$name" = "shows" ] && name="news"
+        logfile="${LOGDIR}/${name}.log"
 
-        if echo "$CURRENT_CRON" | grep -qF "$guard"; then
-            success "  Already in crontab: $guard"
+        if [ "$cfg" = "$REPO_DIR/config/shows.yaml" ]; then
+            line="${cron_expr} ${VENV_BIN}/podcast-updates >> ${logfile} 2>&1"
         else
-            NEW_CRON="${NEW_CRON}
-${line}  # ${guard}"
-            info "  Adding to crontab: $guard"
+            line="${cron_expr} ${VENV_BIN}/podcast-updates --config ${cfg} >> ${logfile} 2>&1"
         fi
+
+        BLOCK+="${line}"$'\n'
+        info "  $name: $cron_expr"
     done
 
-    # Write updated crontab only if changed
-    if [ "$NEW_CRON" != "$CURRENT_CRON" ]; then
-        echo "$NEW_CRON" | crontab -
-        success "Crontab updated"
+    BLOCK+="$MARKER_END"
+
+    # Replace the managed block in the existing crontab (or append if first time)
+    CURRENT_CRON="$(crontab -l 2>/dev/null || true)"
+
+    if echo "$CURRENT_CRON" | grep -qF "$MARKER_BEGIN"; then
+        # Remove old managed block, insert new one
+        NEW_CRON="$(echo "$CURRENT_CRON" | \
+            sed "/^# BEGIN podcast-updates/,/^# END podcast-updates/d")"
+        NEW_CRON="${NEW_CRON}"$'\n'"${BLOCK}"
     else
-        success "Crontab already up to date"
+        NEW_CRON="${CURRENT_CRON}"$'\n'"${BLOCK}"
     fi
+
+    echo "$NEW_CRON" | crontab -
+    success "Crontab updated (${#config_files[@]} pipeline(s) + watcher)"
 
     warn "Watcher (@reboot) starts on next reboot. Start it now with:"
     echo "    nohup ${VENV_BIN}/podcast-watch >> ${LOGDIR}/watcher.log 2>&1 &"
 
 elif [ "$OS" = "Darwin" ]; then
     # ── Mac: launchd ──────────────────────────────────────────────────────────
+    # Plists are regenerated from config each run — picks up schedule changes
+    # and new pipelines automatically.
 
     LAUNCH_AGENTS="$HOME/Library/LaunchAgents"
-    LAUNCHD_SRC="$REPO_DIR/launchd"
     mkdir -p "$LAUNCH_AGENTS"
 
-    for plist_src in "$LAUNCHD_SRC"/com.podcast-updates.*.plist; do
-        label="$(basename "$plist_src" .plist)"
+    # Generate a plist for each config file from its schedule.cron value
+    for cfg in "${config_files[@]}"; do
+        name="$(basename "$cfg" .yaml | sed 's/shows_//')"
+        [ "$name" = "shows" ] && name="news"
+        label="com.podcast-updates.${name}"
         plist_dst="$LAUNCH_AGENTS/${label}.plist"
+        logfile="${LOGDIR}/${name}.log"
 
-        # Substitute USERNAME with actual username
-        sed "s|/Users/USERNAME|$HOME|g" "$plist_src" > "$plist_dst"
+        if [ "$cfg" = "$REPO_DIR/config/shows.yaml" ]; then
+            prog_args="<string>${VENV_BIN}/podcast-updates</string>"
+        else
+            prog_args="<string>${VENV_BIN}/podcast-updates</string>
+    <string>--config</string>
+    <string>${cfg}</string>"
+        fi
 
-        # Unload first (ignore errors if not loaded)
+        cron_expr="$(yaml_cron "$cfg")"
+
+        # Convert cron expression to launchd StartCalendarInterval dicts
+        if [ -n "$cron_expr" ]; then
+            cal_interval="$("$VENV_BIN/python" - "$cron_expr" <<'PYEOF'
+import sys
+fields = sys.argv[1].split()
+minute, hour, _, _, weekdays = fields
+
+keys = {"Minute": minute, "Hour": hour}
+wd_map = {"0":"0","1":"1","2":"2","3":"3","4":"4","5":"5","6":"6"}
+
+if weekdays == "*":
+    days = []
+elif "-" in weekdays:
+    lo, hi = weekdays.split("-")
+    days = list(range(int(lo), int(hi)+1))
+elif "," in weekdays:
+    days = [int(d) for d in weekdays.split(",")]
+else:
+    days = [int(weekdays)]
+
+if not days:
+    # Every day
+    print(f"  <dict><key>Hour</key><integer>{hour}</integer>"
+          f"<key>Minute</key><integer>{minute}</integer></dict>")
+else:
+    for d in days:
+        print(f"  <dict><key>Weekday</key><integer>{d}</integer>"
+              f"<key>Hour</key><integer>{hour}</integer>"
+              f"<key>Minute</key><integer>{minute}</integer></dict>")
+PYEOF
+)"
+        fi
+
+        if [ -n "$cron_expr" ]; then
+            schedule_xml="  <key>StartCalendarInterval</key>
+  <array>
+${cal_interval}
+  </array>"
+        else
+            schedule_xml="  <!-- no schedule.cron in config -->"
+        fi
+
+        cat > "$plist_dst" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Generated by setup.sh from $(basename "$cfg") — re-run setup.sh to update -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>${label}</string>
+  <key>ProgramArguments</key>
+  <array>
+    ${prog_args}
+  </array>
+  <key>WorkingDirectory</key>
+  <string>${REPO_DIR}</string>
+${schedule_xml}
+  <key>StandardOutPath</key>
+  <string>${logfile}</string>
+  <key>StandardErrorPath</key>
+  <string>${logfile}</string>
+</dict>
+</plist>
+PLIST
+
         launchctl unload "$plist_dst" 2>/dev/null || true
         launchctl load "$plist_dst"
         success "  Loaded $label"
     done
 
-    success "All launchd agents loaded"
+    # Watcher plist (KeepAlive daemon, no schedule)
+    watcher_dst="$LAUNCH_AGENTS/com.podcast-updates.watch.plist"
+    cat > "$watcher_dst" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Generated by setup.sh — re-run setup.sh to update -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.podcast-updates.watch</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${VENV_BIN}/podcast-watch</string>
+    <string>--interval</string>
+    <string>900</string>
+    <string>--concurrency</string>
+    <string>4</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>${REPO_DIR}</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+  <key>StandardOutPath</key>
+  <string>${LOGDIR}/watcher.log</string>
+  <key>StandardErrorPath</key>
+  <string>${LOGDIR}/watcher.log</string>
+</dict>
+</plist>
+PLIST
+
+    launchctl unload "$watcher_dst" 2>/dev/null || true
+    launchctl load "$watcher_dst"
+    success "  Loaded com.podcast-updates.watch"
+
+    success "All launchd agents loaded (${#config_files[@]} pipeline(s) + watcher)"
 fi
 
 # ── 8. Syncthing reminder (first-time only) ───────────────────────────────────
