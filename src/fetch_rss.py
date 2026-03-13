@@ -29,6 +29,7 @@ class Episode:
     description: str = ""
     link: str = ""
     guid: str = ""
+    transcript_url: str = ""  # podcast:transcript RSS tag, if present
 
 
 def _parse_entry(entry, show: Show) -> Episode | None:
@@ -58,6 +59,18 @@ def _parse_entry(entry, show: Show) -> Episode | None:
     if raw_duration:
         duration = _parse_duration(raw_duration)
 
+    # Extract podcast:transcript URL (Podcasting 2.0 namespace)
+    transcript_url = ""
+    pt = entry.get("podcast_transcript")
+    if pt:
+        transcript_url = pt.get("url", "") if isinstance(pt, dict) else str(pt)
+    if not transcript_url:
+        # Some feeds expose it as a link with rel="transcript"
+        for link in entry.get("links", []):
+            if link.get("rel") == "transcript":
+                transcript_url = link.get("href", "")
+                break
+
     return Episode(
         show_slug=show.slug,
         show_name=show.name,
@@ -68,6 +81,7 @@ def _parse_entry(entry, show: Show) -> Episode | None:
         description=entry.get("summary", ""),
         link=entry.get("link", ""),
         guid=entry.get("id", entry.get("link", "")),
+        transcript_url=transcript_url,
     )
 
 

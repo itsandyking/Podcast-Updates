@@ -1,9 +1,10 @@
-"""Transcribe podcast audio using Moonshine or faster-whisper."""
+"""Transcribe podcast audio using Moonshine, faster-whisper, or mlx-whisper."""
 
 from __future__ import annotations
 
 import array
 import logging
+import os
 import re
 import struct
 import subprocess
@@ -29,22 +30,33 @@ _AD_TRIGGER_RE = re.compile(
 _AD_SUPPRESS_SECS = 120  # max seconds to suppress after a trigger
 
 
+def stable_transcript_path(show_slug: str, pub_date_str: str) -> Path:
+    """Canonical on-disk path for a transcript, shared across machines via Syncthing."""
+    return TRANSCRIPT_DIR / show_slug / f"{pub_date_str}.txt"
+
+
+def load_transcript(show_slug: str, pub_date_str: str) -> str | None:
+    """Load a cached transcript. Returns None if not yet available."""
+    path = stable_transcript_path(show_slug, pub_date_str)
+    if path.exists():
+        return path.read_text()
+    return None
+
+
 def transcribe_audio(
     audio_path: Path,
     show_slug: str,
-    date_str: str,
+    pub_date_str: str,
     config: TranscriptionConfig,
-    episode_key: str = "",
 ) -> str | None:
     """Transcribe an audio file and save the transcript.
 
-    episode_key overrides the filename stem — use when a show has multiple episodes
-    in one run to avoid collisions (e.g. "{slug}-20260310").
+    pub_date_str is the episode's publication date (YYYY-MM-DD), used as the stable
+    cache key so the same transcript is found by both Pi and Mac via Syncthing.
     Returns the transcript text, or None on failure.
     """
-    dest_dir = TRANSCRIPT_DIR / date_str
-    dest_dir.mkdir(parents=True, exist_ok=True)
-    dest_path = dest_dir / f"{episode_key or show_slug}.txt"
+    dest_path = stable_transcript_path(show_slug, pub_date_str)
+    dest_path.parent.mkdir(parents=True, exist_ok=True)
 
     if dest_path.exists():
         logger.info("Transcript already exists: %s", dest_path)
@@ -56,6 +68,8 @@ def transcribe_audio(
         text = _transcribe_moonshine(audio_path)
     elif config.engine == "faster-whisper":
         text = _transcribe_faster_whisper(audio_path, config.model)
+    elif config.engine == "mlx-whisper":
+        text = _transcribe_mlx_whisper(audio_path, config.model)
     else:
         logger.error("Unknown transcription engine: %s", config.engine)
         return None
@@ -191,9 +205,55 @@ def _transcribe_faster_whisper(audio_path: Path, model_name: str) -> str | None:
         return None
 
 
-def load_transcript(show_slug: str, date_str: str) -> str | None:
-    """Load an existing transcript from disk."""
-    path = TRANSCRIPT_DIR / date_str / f"{show_slug}.txt"
-    if path.exists():
-        return path.read_text()
-    return None
+def _transcribe_mlx_whisper(audio_path: Path, model_name: str) -> str | None:
+    """Transcribe using mlx-whisper (Apple Silicon — Neural Engine + GPU)."""
+    try:
+        import mlx_whisper
+    except ImportError:
+        logger.error(
+            "mlx-whisper not installed. Install with: pip install mlx-whisper"
+        )
+        return None
+
+    # mlx-whisper model names map to HuggingFace repos in mlx-community
+    hf_repo = f"mlx-community/whisper-{model_name}-mlx"
+    logger.info("Using mlx-whisper model: %s", hf_repo)
+
+    try:
+        result = mlx_whisper.transcribe(str(audio_path), path_or_hf_repo=hf_repo)
+        segments = result.get("segments", [])
+
+        paragraphs = []
+        current = []
+        suppress_until = -1.0
+        ad_count = 0
+
+        for segment in segments:
+            text = segment.get("text", "").strip()
+            start = float(segment.get("start", 0.0))
+            end = float(segment.get("end", 0.0))
+
+            if _AD_TRIGGER_RE.search(text):
+                suppress_until = end + _AD_SUPPRESS_SECS
+                ad_count += 1
+                logger.debug("Ad block detected at %.1fs: %s", start, text[:60])
+                continue
+
+            if start < suppress_until:
+                continue
+
+            current.append(text)
+            if len(current) >= 5:
+                paragraphs.append(" ".join(current))
+                current = []
+
+        if current:
+            paragraphs.append(" ".join(current))
+
+        if ad_count:
+            logger.info("Suppressed %d ad block(s) from %s", ad_count, audio_path.name)
+
+        return "\n\n".join(paragraphs) or None
+    except Exception as e:
+        logger.error("mlx-whisper transcription failed: %s", e)
+        return None

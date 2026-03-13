@@ -18,6 +18,7 @@ from .transcribe import transcribe_audio
 from .analyze import analyze_transcripts
 from .deliver import save_daily_transcripts, deliver_transcripts_email, deliver_email
 from .episode_ledger import load_ledger, is_processed, mark_processed
+from .transcribe import load_transcript
 
 logger = logging.getLogger(__name__)
 
@@ -99,11 +100,33 @@ async def run_pipeline(target_date: date | None = None, config_path: Path | None
 
     async def _fetch_transcript(ep, show, ep_key):
         """Download + transcribe one episode. Returns (episode, text, source)."""
+        pub_date_str = ep.published.date().isoformat()
+
+        # 1. Check stable transcript cache (pre-transcribed by watcher or other machine)
+        cached = load_transcript(ep.show_slug, pub_date_str)
+        if cached:
+            logger.info("Transcript cache hit: %s — %s", ep.show_name, ep.title)
+            return ep, cached, "cached"
+
+        # 2. Web transcript (NPR, etc.)
         web_text = await try_web_transcript(ep, show)
         if web_text:
             logger.info("Web transcript: %s — %s", ep.show_name, ep.title)
             return ep, web_text, f"{show.web_transcript.parser}_web"
 
+        # 3. podcast:transcript RSS tag (pre-made, best quality)
+        if ep.transcript_url:
+            logger.info("Fetching podcast:transcript: %s — %s", ep.show_name, ep.title)
+            try:
+                import httpx
+                async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
+                    resp = await client.get(ep.transcript_url)
+                    if resp.status_code == 200:
+                        return ep, resp.text, "podcast_transcript"
+            except Exception as exc:
+                logger.warning("podcast:transcript fetch failed for %s: %s", ep.title, exc)
+
+        # 4. Download audio + transcribe
         logger.info("Downloading: %s — %s", ep.show_name, ep.title)
         audio_path = await download_episode(ep, date_str, ep_key)
         if not audio_path:
@@ -115,7 +138,7 @@ async def run_pipeline(target_date: date | None = None, config_path: Path | None
             loop = asyncio.get_event_loop()
             text = await loop.run_in_executor(
                 None, transcribe_audio,
-                audio_path, ep.show_slug, date_str, config.transcription, ep_key,
+                audio_path, ep.show_slug, pub_date_str, config.transcription,
             )
         if text:
             return ep, text, config.transcription.engine
@@ -169,9 +192,18 @@ async def run_pipeline(target_date: date | None = None, config_path: Path | None
     combined_path = save_daily_transcripts(config, transcripts, target_date)
 
     # Step 6: Analyze and deliver
-    # shutil.which respects PATH; fall back to the known install location for cron environments
-    claude_bin = shutil.which("claude") or "/home/piking5/.local/bin/claude"
-    if Path(claude_bin).exists():
+    # shutil.which respects PATH; fall back to known install locations for cron environments
+    # (Pi: ~/.local/bin/claude, Mac: ~/.local/bin/claude or /usr/local/bin/claude)
+    import os as _os
+    _fallback_bins = [
+        "/home/piking5/.local/bin/claude",
+        f"/Users/{_os.environ.get('USER', '')}/.local/bin/claude",
+        "/usr/local/bin/claude",
+    ]
+    claude_bin = shutil.which("claude") or next(
+        (p for p in _fallback_bins if Path(p).exists()), None
+    )
+    if claude_bin and Path(claude_bin).exists():
         logger.info("Step 6: Running claude --print analysis")
         briefing = await analyze_transcripts(config, transcripts, target_date)
         if briefing and config.delivery.method == "email":

@@ -20,6 +20,7 @@ dependencies = [
 [project.optional-dependencies]
 moonshine = ["moonshine-voice"]
 whisper = ["faster-whisper>=1.0"]
+mlx = ["mlx-whisper>=0.3"]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
@@ -29,6 +30,7 @@ dev = [
 [project.scripts]
 podcast-updates = "src.pipeline:main"
 podcast-analyze = "src.pipeline:main_analyze"
+podcast-watch = "src.watcher:main"
 
 [tool.setuptools.packages.find]
 include = ["src*"]

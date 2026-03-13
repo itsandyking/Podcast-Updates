@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  News pipeline: Mon–Sat 7am PT.  Install:
+
+    cp launchd/com.podcast-updates.news.plist ~/Library/LaunchAgents/
+    # Edit USERNAME below, then:
+    launchctl load ~/Library/LaunchAgents/com.podcast-updates.news.plist
+
+  NOTE: launchd StartCalendarInterval uses local Mac time (same as cron on Pi).
+  The Mac must be awake at the scheduled time; connect to power and disable
+  sleep (System Settings → Battery → Prevent automatic sleeping when on power adapter).
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.podcast-updates.news</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/USERNAME/Podcast-Updates/.venv/bin/podcast-updates</string>
+    <string>--config</string>
+    <string>/Users/USERNAME/Podcast-Updates/config/shows.yaml</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/USERNAME/Podcast-Updates</string>
+
+  <!-- Mon–Sat at 7:00 AM local time -->
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Weekday</key><integer>6</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict>
+  </array>
+
+  <key>StandardOutPath</key>
+  <string>/Users/USERNAME/Podcast-Updates/data/logs/news.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/USERNAME/Podcast-Updates/data/logs/news.log</string>
+</dict>
+</plist>

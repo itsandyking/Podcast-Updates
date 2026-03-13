@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Pre-fetch watcher: polls all show feeds every 15 minutes and pre-transcribes
+  new episodes as they drop.  Install:
+
+    cp launchd/com.podcast-updates.watch.plist ~/Library/LaunchAgents/
+    # Edit USERNAME and REPO_PATH below, then:
+    launchctl load ~/Library/LaunchAgents/com.podcast-updates.watch.plist
+
+  The watcher runs while the Mac is awake (KeepAlive=true).
+  Transcripts are saved to data/transcripts/{slug}/{pub_date}.txt and
+  synced to Pi via Syncthing.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.podcast-updates.watch</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/USERNAME/Podcast-Updates/.venv/bin/podcast-watch</string>
+    <string>--interval</string>
+    <string>900</string>
+    <string>--concurrency</string>
+    <string>4</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/USERNAME/Podcast-Updates</string>
+
+  <!-- Start immediately when loaded -->
+  <key>RunAtLoad</key>
+  <true/>
+
+  <!-- Restart if it exits -->
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/USERNAME/Podcast-Updates/data/logs/watcher.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/USERNAME/Podcast-Updates/data/logs/watcher.log</string>
+
+  <!-- Throttle restart to avoid tight loop on persistent errors -->
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+</dict>
+</plist>

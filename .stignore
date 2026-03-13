@@ -1,0 +1,32 @@
+# Syncthing ignore rules for Podcast-Updates
+# These files are machine-local and should NOT sync between Pi and Mac.
+
+# Audio files are ephemeral — downloaded, transcribed, then deleted.
+# Syncing them would waste bandwidth and storage.
+data/audio/
+
+# Python bytecode and virtualenv
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+*.egg-info/
+
+# Editor and OS artifacts
+.DS_Store
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# Test artifacts
+.pytest_cache/
+.ruff_cache/
+
+# WHAT DOES SYNC (everything else):
+#   data/transcripts/       ← stable transcript cache (shared between Pi + Mac)
+#   data/episode_ledger/    ← GUID deduplication ledger
+#   data/themes/            ← rolling story thread ledger
+#   data/briefings/         ← generated briefing files
+#   daily_transcripts/      ← combined analysis-ready transcript files
+#   config/                 ← shared configuration
