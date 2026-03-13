@@ -15,14 +15,16 @@ logger = logging.getLogger(__name__)
 AUDIO_DIR = DATA_DIR / "audio"
 
 
-async def download_episode(episode: Episode, date_str: str) -> Path | None:
+async def download_episode(episode: Episode, date_str: str, episode_key: str = "") -> Path | None:
     """Download an episode's audio file.
 
+    episode_key overrides the filename stem — use when a show has multiple episodes
+    in one run to avoid collisions (e.g. "{slug}-20260310").
     Returns the path to the downloaded file, or None on failure.
     """
     dest_dir = AUDIO_DIR / date_str
     dest_dir.mkdir(parents=True, exist_ok=True)
-    dest_path = dest_dir / f"{episode.show_slug}.mp3"
+    dest_path = dest_dir / f"{episode_key or episode.show_slug}.mp3"
 
     if dest_path.exists():
         logger.info("Audio already downloaded: %s", dest_path)

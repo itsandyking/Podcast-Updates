@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import array
 import logging
+import re
 import struct
 import subprocess
 import tempfile
@@ -16,20 +17,34 @@ logger = logging.getLogger(__name__)
 
 TRANSCRIPT_DIR = DATA_DIR / "transcripts"
 
+# Phrases that signal the start of a sponsor ad read.
+# When detected, segments are suppressed for up to _AD_SUPPRESS_SECS seconds.
+_AD_TRIGGER_RE = re.compile(
+    r'\b(this message comes from|support for this podcast|support comes from|'
+    r'from our sponsor|brought to you by|a message from|'
+    r'this episode is (?:sponsored|supported) by|'
+    r'the following message comes? from)\b',
+    re.IGNORECASE,
+)
+_AD_SUPPRESS_SECS = 120  # max seconds to suppress after a trigger
+
 
 def transcribe_audio(
     audio_path: Path,
     show_slug: str,
     date_str: str,
     config: TranscriptionConfig,
+    episode_key: str = "",
 ) -> str | None:
     """Transcribe an audio file and save the transcript.
 
+    episode_key overrides the filename stem — use when a show has multiple episodes
+    in one run to avoid collisions (e.g. "{slug}-20260310").
     Returns the transcript text, or None on failure.
     """
     dest_dir = TRANSCRIPT_DIR / date_str
     dest_dir.mkdir(parents=True, exist_ok=True)
-    dest_path = dest_dir / f"{show_slug}.txt"
+    dest_path = dest_dir / f"{episode_key or show_slug}.txt"
 
     if dest_path.exists():
         logger.info("Transcript already exists: %s", dest_path)
@@ -141,14 +156,34 @@ def _transcribe_faster_whisper(audio_path: Path, model_name: str) -> str | None:
 
         paragraphs = []
         current = []
+        suppress_until = -1.0  # timestamp (seconds) until which to suppress segments
+        ad_count = 0
+
         for segment in segments:
-            current.append(segment.text.strip())
+            text = segment.text.strip()
+
+            # Check if this segment triggers an ad block
+            if _AD_TRIGGER_RE.search(text):
+                suppress_until = segment.end + _AD_SUPPRESS_SECS
+                ad_count += 1
+                logger.debug("Ad block detected at %.1fs: %s", segment.start, text[:60])
+                continue
+
+            # Skip segments within the suppression window
+            if segment.start < suppress_until:
+                continue
+
+            current.append(text)
             # Break into paragraphs roughly every 5 segments
             if len(current) >= 5:
                 paragraphs.append(" ".join(current))
                 current = []
+
         if current:
             paragraphs.append(" ".join(current))
+
+        if ad_count:
+            logger.info("Suppressed %d ad block(s) from %s", ad_count, audio_path.name)
 
         return "\n\n".join(paragraphs)
     except Exception as e:

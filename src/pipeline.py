@@ -6,6 +6,7 @@ import asyncio
 import logging
 import shutil
 import sys
+from collections import defaultdict
 from datetime import date, datetime, timezone
 from pathlib import Path
 
@@ -85,40 +86,64 @@ async def run_pipeline(target_date: date | None = None, config_path: Path | None
     episodes = fresh
 
     # Step 2 & 3: Get transcripts (web or audio+STT)
+    # Group episodes by show — weekly pipelines may have several per show
     transcripts: dict[str, str] = {}
     transcript_sources: dict[str, str] = {}
     shows_by_slug = {s.slug: s for s in config.shows}
 
-    for episode in episodes:
-        show = shows_by_slug.get(episode.show_slug)
+    episodes_by_show: dict[str, list] = defaultdict(list)
+    for ep in episodes:
+        episodes_by_show[ep.show_slug].append(ep)
+
+    for show_slug, show_episodes in episodes_by_show.items():
+        show = shows_by_slug.get(show_slug)
         if not show:
             continue
 
-        # Try web transcript first
-        logger.info("Step 2: Checking web transcript for %s", episode.show_name)
-        web_text = await try_web_transcript(episode, show)
-        if web_text:
-            transcripts[episode.show_slug] = web_text
-            transcript_sources[episode.show_slug] = f"{show.web_transcript.parser}_web"
-            logger.info("Using web transcript for %s", episode.show_name)
+        multi = len(show_episodes) > 1
+        collected: list[tuple] = []  # (episode, text)
+
+        for ep in show_episodes:
+            # Use a date-scoped key when a show has multiple episodes to avoid filename collisions
+            ep_key = f"{show_slug}-{ep.published.strftime('%Y%m%d')}" if multi else show_slug
+
+            logger.info("Step 2: Checking web transcript for %s: %s", ep.show_name, ep.title)
+            web_text = await try_web_transcript(ep, show)
+            if web_text:
+                collected.append((ep, web_text))
+                transcript_sources[show_slug] = f"{show.web_transcript.parser}_web"
+                logger.info("Using web transcript for %s", ep.title)
+                continue
+
+            logger.info("Step 3: Downloading audio for %s: %s", ep.show_name, ep.title)
+            audio_path = await download_episode(ep, date_str, ep_key)
+            if not audio_path:
+                logger.warning("Could not download audio for %s — skipping", ep.title)
+                continue
+
+            logger.info("Step 4: Transcribing %s", ep.title)
+            text = transcribe_audio(audio_path, show_slug, date_str, config.transcription, ep_key)
+            if text:
+                collected.append((ep, text))
+                transcript_sources[show_slug] = config.transcription.engine
+            else:
+                logger.warning("Transcription failed for %s", ep.title)
+
+        if not collected:
             continue
 
-        # Fall back to audio download + local transcription
-        logger.info("Step 3: Downloading audio for %s", episode.show_name)
-        audio_path = await download_episode(episode, date_str)
-        if not audio_path:
-            logger.warning("Could not download audio for %s — skipping", episode.show_name)
-            continue
-
-        logger.info("Step 4: Transcribing %s", episode.show_name)
-        text = transcribe_audio(audio_path, episode.show_slug, date_str, config.transcription)
-        if text:
-            transcripts[episode.show_slug] = text
-            transcript_sources[episode.show_slug] = config.transcription.engine
+        if len(collected) == 1:
+            transcripts[show_slug] = collected[0][1]
         else:
-            logger.warning("Transcription failed for %s", episode.show_name)
+            blocks = []
+            for ep, text in collected:
+                pub = ep.published.strftime("%-d %b %Y")
+                blocks.append(f"### \"{ep.title}\" ({pub})\n\n{text}")
+            transcripts[show_slug] = "\n\n---\n\n".join(blocks)
+            logger.info("Combined %d episodes for %s", len(collected), show.name)
 
-    logger.info("Transcripts ready: %d/%d shows", len(transcripts), len(episodes))
+    total_episodes = sum(len(v) for v in episodes_by_show.values())
+    logger.info("Transcripts ready: %d/%d shows (%d episodes)", len(transcripts), len(episodes_by_show), total_episodes)
 
     if not transcripts:
         logger.error("No transcripts available — aborting")

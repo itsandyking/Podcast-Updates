@@ -12,6 +12,11 @@ from .config import Show
 
 logger = logging.getLogger(__name__)
 
+_USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+)
+
 
 @dataclass
 class Episode:
@@ -26,33 +31,8 @@ class Episode:
     guid: str = ""
 
 
-def fetch_latest_episode(show: Show, target_date: date) -> Episode | None:
-    """Fetch the most recent episode from a show's RSS feed.
-
-    Returns None if the feed can't be parsed, has no episodes, or the latest
-    episode is older than one day before target_date.
-    """
-    if not show.rss_url:
-        logger.warning("No RSS URL configured for %s — skipping", show.name)
-        return None
-
-    logger.info("Fetching RSS feed for %s", show.name)
-    feed = feedparser.parse(
-        show.rss_url,
-        agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-    )
-
-    if feed.bozo and not feed.entries:
-        logger.error("Failed to parse feed for %s: %s", show.name, feed.bozo_exception)
-        return None
-
-    if not feed.entries:
-        logger.warning("No entries in feed for %s", show.name)
-        return None
-
-    entry = feed.entries[0]
-
-    # Extract audio URL from enclosures
+def _parse_entry(entry, show: Show) -> Episode | None:
+    """Parse a feed entry into an Episode. Returns None if no audio URL found."""
     audio_url = ""
     for enclosure in entry.get("enclosures", []):
         if enclosure.get("type", "").startswith("audio/"):
@@ -60,7 +40,6 @@ def fetch_latest_episode(show: Show, target_date: date) -> Episode | None:
             break
 
     if not audio_url:
-        # Try media:content as fallback
         for media in entry.get("media_content", []):
             if media.get("type", "").startswith("audio/"):
                 audio_url = media["url"]
@@ -70,18 +49,16 @@ def fetch_latest_episode(show: Show, target_date: date) -> Episode | None:
         logger.warning("No audio URL found for %s episode: %s", show.name, entry.get("title"))
         return None
 
-    # Parse publish date
     published = datetime.now(timezone.utc)
     if hasattr(entry, "published_parsed") and entry.published_parsed:
         published = datetime(*entry.published_parsed[:6], tzinfo=timezone.utc)
 
-    # Parse duration (itunes:duration can be seconds or HH:MM:SS)
     duration = None
     raw_duration = entry.get("itunes_duration", "")
     if raw_duration:
         duration = _parse_duration(raw_duration)
 
-    episode = Episode(
+    return Episode(
         show_slug=show.slug,
         show_name=show.name,
         title=entry.get("title", "Unknown"),
@@ -93,29 +70,74 @@ def fetch_latest_episode(show: Show, target_date: date) -> Episode | None:
         guid=entry.get("id", entry.get("link", "")),
     )
 
-    # Date filtering: skip episodes older than the cadence window
-    if show.cadence == "weekly":
-        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
-    else:
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
-    if episode.published < cutoff:
-        logger.warning(
-            "Skipping %s — latest episode (%s) is older than %s",
-            show.name,
-            episode.published.date().isoformat(),
-            cutoff.date().isoformat(),
-        )
-        return None
 
-    if episode.published.date() < target_date and not show.afternoon_release and show.cadence != "weekly":
-        logger.warning(
-            "Skipping %s — latest episode (%s) is from a prior day, not today",
-            show.name,
-            episode.published.date().isoformat(),
-        )
-        return None
+def fetch_recent_episodes(show: Show, target_date: date) -> list[Episode]:
+    """Fetch recent episodes from a show's RSS feed within its cadence window.
 
-    return episode
+    For daily shows: returns the single most recent episode published today
+    (or yesterday for afternoon_release shows).
+    For weekly shows: returns all episodes published within the last 7 days,
+    sorted oldest-first so transcripts read chronologically.
+    """
+    if not show.rss_url:
+        logger.warning("No RSS URL configured for %s — skipping", show.name)
+        return []
+
+    logger.info("Fetching RSS feed for %s", show.name)
+    feed = feedparser.parse(show.rss_url, agent=_USER_AGENT)
+
+    if feed.bozo and not feed.entries:
+        logger.error("Failed to parse feed for %s: %s", show.name, feed.bozo_exception)
+        return []
+
+    if not feed.entries:
+        logger.warning("No entries in feed for %s", show.name)
+        return []
+
+    cutoff = (
+        datetime.now(timezone.utc) - timedelta(days=7)
+        if show.cadence == "weekly"
+        else datetime.now(timezone.utc) - timedelta(hours=24)
+    )
+
+    episodes: list[Episode] = []
+    for entry in feed.entries:
+        episode = _parse_entry(entry, show)
+        if episode is None:
+            continue
+
+        # Feeds are reverse-chronological; once we pass the cutoff there's nothing newer
+        if episode.published < cutoff:
+            break
+
+        if show.cadence == "weekly":
+            episodes.append(episode)
+        else:
+            # Daily: accept only today's episode (or yesterday's for afternoon_release)
+            if episode.published.date() < target_date and not show.afternoon_release:
+                break
+            episodes.append(episode)
+            break  # Daily shows: one episode per run
+
+    if not episodes:
+        logger.warning("No recent episodes found for %s", show.name)
+    elif len(episodes) > 1:
+        logger.info("Found %d episodes for %s within 7-day window", len(episodes), show.name)
+        episodes.sort(key=lambda e: e.published)  # oldest first → chronological transcripts
+
+    return episodes
+
+
+def fetch_all_episodes(shows: list[Show], target_date: date) -> list[Episode]:
+    """Fetch recent episodes from each configured show."""
+    episodes = []
+    for show in shows:
+        found = fetch_recent_episodes(show, target_date)
+        if found:
+            episodes.extend(found)
+        else:
+            logger.warning("Skipped %s — no recent episodes available", show.name)
+    return episodes
 
 
 def _parse_duration(raw: str) -> int | None:
@@ -131,15 +153,3 @@ def _parse_duration(raw: str) -> int | None:
     except (ValueError, IndexError):
         pass
     return None
-
-
-def fetch_all_episodes(shows: list[Show], target_date: date) -> list[Episode]:
-    """Fetch the latest episode from each configured show."""
-    episodes = []
-    for show in shows:
-        ep = fetch_latest_episode(show, target_date)
-        if ep:
-            episodes.append(ep)
-        else:
-            logger.warning("Skipped %s — no episode available", show.name)
-    return episodes
