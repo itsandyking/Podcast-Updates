@@ -5,18 +5,18 @@
 # Syncing them would waste bandwidth and storage.
 data/audio/
 
-# Machine-local config (transcription engine differs per machine)
-config/.env.local
-
-# Syncthing atomic write temp files
-.syncthing.*.tmp
-
 # Python bytecode and virtualenv
 __pycache__/
 *.pyc
 *.pyo
 .venv/
 *.egg-info/
+
+# Machine-specific env overrides (transcription engine differs per machine)
+config/.env.local
+
+# Watcher trigger flags (per-machine, prevents double pipeline runs)
+data/watcher/
 
 # Editor and OS artifacts
 .DS_Store
