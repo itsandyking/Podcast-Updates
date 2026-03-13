@@ -18,6 +18,9 @@ config/.env.local
 # Watcher trigger flags (per-machine, prevents double pipeline runs)
 data/watcher/
 
+# Syncthing atomic write temp files
+.syncthing.*.tmp
+
 # Editor and OS artifacts
 .DS_Store
 *.swp
