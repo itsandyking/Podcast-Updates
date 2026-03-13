@@ -96,7 +96,10 @@ async def run_pipeline(target_date: date | None = None, config_path: Path | None
     for ep in episodes:
         episodes_by_show[ep.show_slug].append(ep)
 
-    transcription_sem = asyncio.Semaphore(2)
+    # mlx-whisper uses the Metal GPU and crashes with concurrent access;
+    # faster-whisper/moonshine are CPU-bound and benefit from parallelism.
+    max_concurrent = 1 if config.transcription.engine == "mlx-whisper" else 2
+    transcription_sem = asyncio.Semaphore(max_concurrent)
 
     async def _fetch_transcript(ep, show, ep_key):
         """Download + transcribe one episode. Returns (episode, text, source)."""
