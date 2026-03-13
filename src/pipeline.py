@@ -211,7 +211,7 @@ async def run_pipeline(target_date: date | None = None, config_path: Path | None
         briefing = await analyze_transcripts(config, transcripts, target_date)
         if briefing and config.delivery.method == "email":
             logger.info("Step 6b: Emailing briefing")
-            if deliver_email(briefing, target_date, episodes):
+            if deliver_email(briefing, target_date, episodes, config.shows):
                 mark_processed(episodes, config.group, target_date)
         elif not briefing:
             logger.warning("Analysis failed — falling back to transcript email")
@@ -273,7 +273,7 @@ async def run_analyze_only(target_date: date | None = None, config_path: Path | 
     save_briefing(config, briefing, target_date, {s: "saved" for s in transcripts})
 
     if config.delivery.method == "email":
-        ok = deliver_email(briefing, target_date, episodes)
+        ok = deliver_email(briefing, target_date, episodes, config.shows)
         if ok and episodes:
             mark_processed(episodes, config.group, target_date)
     return True

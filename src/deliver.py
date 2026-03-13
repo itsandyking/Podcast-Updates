@@ -242,16 +242,41 @@ def _briefing_to_html(briefing_text: str, target_date: date) -> str:
     )
 
 
-def _build_episode_header(episodes: list) -> str:
-    """Build a markdown episode list to prepend to the briefing."""
+def _build_episode_header(episodes: list, shows: list | None = None) -> str:
+    """Build a markdown episode list with publisher abbreviation."""
+    publisher_by_slug = {}
+    if shows:
+        publisher_by_slug = {s.slug: s.publisher for s in shows}
+
     lines = ["### Episodes\n"]
     for ep in episodes:
-        pub = ep.published.strftime("%-d %B %Y")
-        lines.append(f"- **{ep.show_name}** — {ep.title} *({pub})*")
+        publisher = publisher_by_slug.get(ep.show_slug, "")
+        pub_tag = f" [{publisher}]" if publisher else ""
+        lines.append(f"- **{ep.show_name}**{pub_tag} — {ep.title}")
     return "\n".join(lines)
 
 
-def deliver_email(briefing_text: str, target_date: date, episodes: list | None = None) -> bool:
+def _extract_top_hits(briefing_text: str) -> tuple[str, str]:
+    """Extract the TOP HITS section from the briefing, returning (top_hits, remaining)."""
+    import re
+    pattern = r'## TOP HITS\s*\n(.*?)(?=\n---|\n## )'
+    match = re.search(pattern, briefing_text, re.DOTALL)
+    if not match:
+        return "", briefing_text
+    top_hits = match.group(1).strip()
+    # Remove the TOP HITS section from the briefing body
+    remaining = briefing_text[:match.start()].rstrip() + briefing_text[match.end():]
+    # Clean up any double --- separators left behind
+    remaining = re.sub(r'\n---\s*\n---', '\n---', remaining)
+    return top_hits, remaining
+
+
+def deliver_email(
+    briefing_text: str,
+    target_date: date,
+    episodes: list | None = None,
+    shows: list | None = None,
+) -> bool:
     """Send the briefing via email with plain-text and HTML alternatives."""
     smtp_host = os.environ.get("SMTP_HOST", "smtp.gmail.com")
     smtp_port = int(os.environ.get("SMTP_PORT", "587"))
@@ -268,9 +293,16 @@ def deliver_email(briefing_text: str, target_date: date, episodes: list | None =
     msg["From"] = smtp_user
     msg["To"] = email_to
 
+    # Extract top hits from briefing, build email: top hits → episodes → rest
+    top_hits, remaining = _extract_top_hits(briefing_text)
+    preamble_parts = []
+    if top_hits:
+        preamble_parts.append(f"### Top Hits\n\n{top_hits}")
     if episodes:
-        header = _build_episode_header(episodes)
-        full_text = f"{header}\n\n---\n\n{briefing_text}"
+        preamble_parts.append(_build_episode_header(episodes, shows))
+    if preamble_parts:
+        preamble = "\n\n".join(preamble_parts)
+        full_text = f"{preamble}\n\n---\n\n{remaining}"
     else:
         full_text = briefing_text
 

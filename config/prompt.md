@@ -17,6 +17,15 @@ Produce a briefing with these sections:
 
 -----
 
+## TOP HITS
+
+3-5 bullet points — the executive summary. Each bullet is one sentence with a boldface topic label. Cover the biggest stories of the day. A reader should be able to scan this in 10 seconds and know what matters.
+
+Format:
+- **Topic label:** One sentence capturing the key development.
+
+-----
+
 ## TODAY'S BRIEFING
 
 A unified, narratively woven summary of the day's major stories. This is NOT a show-by-show comparison — it's a single coherent account that draws from every show, pulling the best quotes, sharpest details, and most revealing moments from whichever show had them.
