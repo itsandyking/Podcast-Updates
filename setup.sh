@@ -201,7 +201,7 @@ if [ "$OS" = "Linux" ]; then
         success "Auto-sync already in crontab"
     else
         # Append outside the managed pipeline block — it's independent
-        ( echo "$CURRENT_CRON_SYNC"; echo "*/5 * * * * $REPO_DIR/scripts/sync.sh >> $REPO_DIR/data/logs/sync.log 2>&1" ) | crontab -
+        ( echo "$CURRENT_CRON_SYNC"; echo "*/5 * * * * $REPO_DIR/scripts/sync.sh" ) | crontab -
         success "Auto-sync added to crontab (every 5 min)"
     fi
 elif [ "$OS" = "Darwin" ]; then

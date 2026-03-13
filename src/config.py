@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import platform
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -69,6 +70,13 @@ class PipelineConfig:
     group: str = ""
 
 
+def _detect_engine() -> str:
+    """Auto-select transcription engine based on OS and architecture."""
+    if platform.system() == "Darwin" and platform.machine() == "arm64":
+        return "mlx-whisper"   # Apple Silicon — Metal GPU via MLX
+    return "faster-whisper"    # Pi, Intel Mac, Linux
+
+
 def load_config(config_path: Path | None = None) -> PipelineConfig:
     """Load pipeline configuration from shows.yaml and environment variables."""
     load_dotenv(CONFIG_DIR / ".env")
@@ -103,8 +111,9 @@ def load_config(config_path: Path | None = None) -> PipelineConfig:
         )
 
     transcription = TranscriptionConfig(**raw.get("transcription", {}))
-    # Allow per-machine override via env var (avoids Syncthing config conflicts)
-    engine_override = os.environ.get("TRANSCRIPTION_ENGINE")
+    # Allow per-machine override via env var (avoids Syncthing config conflicts).
+    # Falls back to auto-detection by OS/arch if not explicitly set.
+    engine_override = os.environ.get("TRANSCRIPTION_ENGINE") or _detect_engine()
     if engine_override:
         transcription.engine = engine_override
     analysis = AnalysisConfig(**raw.get("analysis", {}))
