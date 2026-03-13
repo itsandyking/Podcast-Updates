@@ -267,7 +267,7 @@ if [ "$OS" = "Linux" ]; then
 
     # Generate the managed block
     BLOCK="$MARKER_BEGIN"$'\n'
-    BLOCK+="@reboot ${VENV_BIN}/podcast-watch >> ${LOGDIR}/watcher.log 2>&1"$'\n'
+    BLOCK+="@reboot ${VENV_BIN}/podcast-watch >> ${LOGDIR}/watcher_pi.log 2>&1"$'\n'
 
     for cfg in "${config_files[@]}"; do
         cron_expr="$(yaml_cron "$cfg")"
@@ -305,7 +305,7 @@ if [ "$OS" = "Linux" ]; then
     success "Crontab updated (${#config_files[@]} pipeline(s) + watcher)"
 
     warn "Watcher (@reboot) starts on next reboot. Start it now with:"
-    echo "    nohup ${VENV_BIN}/podcast-watch >> ${LOGDIR}/watcher.log 2>&1 &"
+    echo "    nohup ${VENV_BIN}/podcast-watch >> ${LOGDIR}/watcher_pi.log 2>&1 &"
 
 elif [ "$OS" = "Darwin" ]; then
     # ── Mac: launchd ──────────────────────────────────────────────────────────
@@ -432,9 +432,9 @@ PLIST
   <key>ThrottleInterval</key>
   <integer>30</integer>
   <key>StandardOutPath</key>
-  <string>${LOGDIR}/watcher.log</string>
+  <string>${LOGDIR}/watcher_mac.log</string>
   <key>StandardErrorPath</key>
-  <string>${LOGDIR}/watcher.log</string>
+  <string>${LOGDIR}/watcher_mac.log</string>
 </dict>
 </plist>
 PLIST

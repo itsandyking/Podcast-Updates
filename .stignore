@@ -18,6 +18,9 @@ config/.env.local
 # Watcher trigger flags (per-machine, prevents double pipeline runs)
 data/watcher/
 
+# Watcher logs are per-machine (watcher_mac.log / watcher_pi.log)
+data/logs/watcher*.log
+
 # Editor and OS artifacts
 .DS_Store
 *.swp

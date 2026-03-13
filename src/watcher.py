@@ -10,6 +10,10 @@ When all expected (non-afternoon, daily) shows for a config have transcripts, th
 watcher automatically triggers the analysis pipeline. A deadline from the schedule
 acts as a safety net — if the deadline passes with >= 2 transcripts, it triggers
 anyway to handle shows that skip a day or publish late.
+
+Mac is preferred for transcription (mlx-whisper is ~40x faster than Pi's CPU-bound
+faster-whisper). The Pi runs with --defer to give the Mac a head start. If the Mac
+is offline or asleep, the Pi picks up after the defer window.
 """
 
 from __future__ import annotations
@@ -17,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import platform
 import sys
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -230,6 +235,7 @@ async def _process_episode(
     ep: Episode,
     config,
     transcription_sem: asyncio.Semaphore,
+    defer_secs: int = 0,
 ) -> None:
     """Claim, transcribe, and save one episode to the stable cache."""
     pub_date_str = ep.published.date().isoformat()
@@ -237,6 +243,14 @@ async def _process_episode(
     # Skip if already transcribed (possibly by the other machine via Syncthing)
     if stable_transcript_path(ep.show_slug, pub_date_str).exists():
         return
+
+    # Defer: give the preferred machine (Mac) time to claim first
+    if defer_secs > 0:
+        logger.debug("Deferring %s for %ds (letting preferred machine claim first)", ep.show_name, defer_secs)
+        await asyncio.sleep(defer_secs)
+        # Re-check after waiting — the other machine may have finished
+        if stable_transcript_path(ep.show_slug, pub_date_str).exists():
+            return
 
     if not _try_claim(ep.show_slug, pub_date_str):
         logger.debug("Skipping %s %s — already claimed", ep.show_name, pub_date_str)
@@ -287,6 +301,7 @@ async def watch(
     config_paths: list[Path] | None = None,
     interval_secs: int = 900,
     max_concurrent_transcriptions: int = 2,
+    defer_secs: int = 0,
 ) -> None:
     """Poll all configured show feeds and pre-transcribe new episodes.
 
@@ -295,6 +310,8 @@ async def watch(
 
     interval_secs: how often to re-poll each config (default 15 min)
     max_concurrent_transcriptions: semaphore cap for CPU-bound transcription
+    defer_secs: seconds to wait before claiming episodes (gives preferred machine
+                time to claim first; 0 = claim immediately, used on Mac)
     """
     if config_paths is None:
         config_paths = [p for p in _DEFAULT_CONFIG_PATHS if p.exists()]
@@ -304,8 +321,8 @@ async def watch(
         return
 
     logger.info(
-        "Watcher started — polling %d config(s) every %ds",
-        len(config_paths), interval_secs,
+        "Watcher started — polling %d config(s) every %ds, defer %ds",
+        len(config_paths), interval_secs, defer_secs,
     )
     transcription_sem = asyncio.Semaphore(max_concurrent_transcriptions)
 
@@ -317,7 +334,7 @@ async def watch(
                 config = load_config(config_path)
                 episodes = fetch_all_episodes(config.shows, target_date)
                 tasks = [
-                    _process_episode(ep, config, transcription_sem)
+                    _process_episode(ep, config, transcription_sem, defer_secs)
                     for ep in episodes
                 ]
                 if tasks:
@@ -335,8 +352,15 @@ async def watch(
         await asyncio.sleep(interval_secs)
 
 
+def _default_defer() -> int:
+    """Auto-detect defer: 0 on Mac (preferred), 300 on Pi/Linux (deferred)."""
+    if platform.system() == "Darwin" and platform.machine() == "arm64":
+        return 0
+    return 300
+
+
 def main() -> None:
-    """CLI entry point: podcast-watch [--interval N] [config_path ...]"""
+    """CLI entry point: podcast-watch [--interval N] [--defer N] [config_path ...]"""
     import argparse
 
     logging.basicConfig(
@@ -357,13 +381,19 @@ def main() -> None:
         help="Max concurrent transcriptions (default: 2)",
     )
     parser.add_argument(
+        "--defer", type=int, default=None,
+        help="Seconds to wait before claiming episodes, giving the preferred machine "
+             "time to claim first (default: 0 on Mac, 300 on Linux/Pi)",
+    )
+    parser.add_argument(
         "configs", nargs="*", type=Path,
         help="Config YAML paths to watch (default: all four shows.yaml files)",
     )
     args = parser.parse_args()
 
+    defer = args.defer if args.defer is not None else _default_defer()
     config_paths = args.configs if args.configs else None
-    asyncio.run(watch(config_paths, args.interval, args.concurrency))
+    asyncio.run(watch(config_paths, args.interval, args.concurrency, defer))
 
 
 if __name__ == "__main__":
