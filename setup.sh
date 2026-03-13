@@ -189,6 +189,8 @@ else
     echo "  Install: https://claude.ai/download  (or 'npm install -g @anthropic-ai/claude-code')"
 fi
 
+LOGDIR="$REPO_DIR/data/logs"
+
 # ── 7. Auto-sync (git pull on new commits) ────────────────────────────────────
 header "7. Auto-sync"
 
@@ -237,7 +239,6 @@ fi
 header "8. Scheduler"
 
 VENV_BIN="$VENV/bin"
-LOGDIR="$REPO_DIR/data/logs"
 
 # Read schedule.cron from a shows.yaml file using Python (single source of truth).
 # Returns empty string if the key is absent (e.g. a future pipeline with no schedule yet).
