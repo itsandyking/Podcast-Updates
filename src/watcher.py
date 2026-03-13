@@ -129,22 +129,35 @@ def _ready_transcripts(config: PipelineConfig, target_date: date) -> set[str]:
     return ready
 
 
-def _parse_deadline_hour(config_path: Path) -> int | None:
-    """Extract the hour from the schedule.cron field in a config YAML.
+def _parse_deadline(config_path: Path) -> tuple[int | None, set[int]]:
+    """Extract hour and weekdays from schedule.cron.
 
-    Returns the hour as an int, or None if no schedule is configured.
+    Returns (hour, python_weekdays) where python_weekdays uses date.weekday()
+    convention (0=Mon … 6=Sun). Returns (None, set()) if no schedule configured.
     """
     try:
         with open(config_path) as f:
             raw = yaml.safe_load(f)
         cron = raw.get("schedule", {}).get("cron", "")
         if not cron:
-            return None
+            return None, set()
         # cron format: "minute hour day month weekday"
+        # cron weekday: 0=Sun, 1=Mon … 6=Sat  →  python: (cron-1)%7
         parts = cron.split()
-        return int(parts[1])
+        hour = int(parts[1])
+        wd_field = parts[4]
+        if wd_field == "*":
+            weekdays = set(range(7))
+        elif "-" in wd_field:
+            lo, hi = wd_field.split("-")
+            weekdays = {(d - 1) % 7 for d in range(int(lo), int(hi) + 1)}
+        elif "," in wd_field:
+            weekdays = {(int(d) - 1) % 7 for d in wd_field.split(",")}
+        else:
+            weekdays = {(int(wd_field) - 1) % 7}
+        return hour, weekdays
     except Exception:
-        return None
+        return None, set()
 
 
 def _should_trigger(
@@ -186,11 +199,13 @@ def _should_trigger(
         )
         return True
 
-    # Condition 2: deadline safety net
-    deadline_hour = _parse_deadline_hour(config_path)
+    # Condition 2: deadline safety net — only on the scheduled day of week
+    deadline_hour, scheduled_weekdays = _parse_deadline(config_path)
     if deadline_hour is not None:
         now = datetime.now()
-        if now.hour >= deadline_hour and len(ready) >= _MIN_TRANSCRIPTS_FOR_DEADLINE:
+        if (now.weekday() in scheduled_weekdays
+                and now.hour >= deadline_hour
+                and len(ready) >= _MIN_TRANSCRIPTS_FOR_DEADLINE):
             logger.info(
                 "Watcher: deadline %02d:00 passed with %d/%d transcripts — triggering pipeline",
                 deadline_hour, len(ready), len(expected) if expected else len(config.shows),
