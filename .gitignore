@@ -32,6 +32,10 @@ daily_transcripts/
 *.swp
 *.swo
 
+# Syncthing
+.stfolder/
+*.sync-conflict-*
+
 # OS
 .DS_Store
 Thumbs.db
