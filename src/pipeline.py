@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import shutil
 import sys
 from collections import defaultdict
@@ -67,9 +68,24 @@ async def run_pipeline(target_date: date | None = None, config_path: Path | None
 
     # Second guard: check episode ledger (syncs faster than large transcript files)
     ep_ledger = load_ledger(config.group)
-    ledger_dates = {e.get("processed", "") for e in ep_ledger.get("episodes", [])}
+    ledger_dates = {e.get("processed", "") for e in ep_ledger.values()}
     if date_str in ledger_dates:
         logger.info("Episode ledger shows %s already processed for group '%s' — skipping", date_str, config.group or "default")
+        return combined_path if combined_path.exists() else None
+
+    # Third guard: cross-machine pipeline lock (small file, syncs fast via Syncthing).
+    # Written at the START of the pipeline so the other machine can see it before
+    # analysis + email completes (~8 min window).
+    lock_dir = DATA_DIR / "pipeline_locks"
+    lock_dir.mkdir(parents=True, exist_ok=True)
+    lock_file = lock_dir / f"{config.group or 'news'}_{date_str}.lock"
+    try:
+        fd = os.open(str(lock_file), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        os.write(fd, f"{datetime.now().isoformat()} {os.uname().nodename}\n".encode())
+        os.close(fd)
+    except FileExistsError:
+        logger.info("Pipeline lock exists for %s (%s) — another machine is handling it, skipping",
+                     config.group or "news", date_str)
         return combined_path if combined_path.exists() else None
 
     # Step 1: Fetch RSS feeds
@@ -235,6 +251,14 @@ async def run_pipeline(target_date: date | None = None, config_path: Path | None
     if config.transcription.cleanup_audio:
         logger.info("Step 7: Cleaning up audio files")
         cleanup_audio(date_str)
+
+    # Prune stale pipeline locks (older than 2 days)
+    for old_lock in lock_dir.glob("*.lock"):
+        try:
+            if (datetime.now().timestamp() - old_lock.stat().st_mtime) > 172800:
+                old_lock.unlink(missing_ok=True)
+        except OSError:
+            pass
 
     logger.info("=== Pipeline complete — transcripts at %s ===", combined_path)
     return combined_path

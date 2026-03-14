@@ -35,6 +35,7 @@ data/logs/watcher*.log
 # WHAT DOES SYNC (everything else):
 #   data/transcripts/       ← stable transcript cache (shared between Pi + Mac)
 #   data/episode_ledger/    ← GUID deduplication ledger
+#   data/pipeline_locks/    ← cross-machine pipeline dedup locks
 #   data/themes/            ← rolling story thread ledger
 #   data/briefings/         ← generated briefing files
 #   daily_transcripts/      ← combined analysis-ready transcript files
