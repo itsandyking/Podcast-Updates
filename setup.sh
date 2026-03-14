@@ -390,6 +390,11 @@ ${cal_interval}
   </array>
   <key>WorkingDirectory</key>
   <string>${REPO_DIR}</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:${HOME}/.local/bin</string>
+  </dict>
 ${schedule_xml}
   <key>StandardOutPath</key>
   <string>${logfile}</string>
@@ -425,6 +430,11 @@ PLIST
   </array>
   <key>WorkingDirectory</key>
   <string>${REPO_DIR}</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:${HOME}/.local/bin</string>
+  </dict>
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>
