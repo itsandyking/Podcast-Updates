@@ -65,6 +65,13 @@ async def run_pipeline(target_date: date | None = None, config_path: Path | None
         logger.info("Transcripts for %s already exist at %s — skipping", date_str, combined_path)
         return combined_path
 
+    # Second guard: check episode ledger (syncs faster than large transcript files)
+    ep_ledger = load_ledger(config.group)
+    ledger_dates = {e.get("processed", "") for e in ep_ledger.get("episodes", [])}
+    if date_str in ledger_dates:
+        logger.info("Episode ledger shows %s already processed for group '%s' — skipping", date_str, config.group or "default")
+        return combined_path if combined_path.exists() else None
+
     # Step 1: Fetch RSS feeds
     logger.info("Step 1: Fetching RSS feeds")
     episodes = fetch_all_episodes(config.shows, target_date)

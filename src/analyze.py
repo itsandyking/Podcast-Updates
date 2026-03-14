@@ -197,6 +197,21 @@ async def _update_ledger(
             yaml_text = re.sub(r'\n?```\s*$', '', yaml_text)
         yaml_text = yaml_text.strip()
 
+        # Fix unquoted colons in YAML values (e.g. "Magic: The Gathering")
+        # by quoting any value line where a colon appears inside the value portion
+        def _fix_yaml_colons(text: str) -> str:
+            lines = []
+            for line in text.split("\n"):
+                # Match "  key: value" where value contains an unquoted colon
+                m = re.match(r'^(\s+\w[\w_]*:\s+)(.+)$', line)
+                if m and ':' in m.group(2) and not m.group(2).startswith(("'", '"')):
+                    lines.append(f"{m.group(1)}'{m.group(2)}'")
+                else:
+                    lines.append(line)
+            return "\n".join(lines)
+
+        yaml_text = _fix_yaml_colons(yaml_text)
+
         parsed = yaml.safe_load(yaml_text)
         if isinstance(parsed, dict) and "themes" in parsed:
             logger.info("Ledger updated: %d themes", len(parsed["themes"] or []))
